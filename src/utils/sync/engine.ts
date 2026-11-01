@@ -1,7 +1,7 @@
 // Orchestrates one sync run. All side effects go through `SyncEnv` (local files and
 // practice decks) and `GitHubClient` (remote), so the algorithm can be tested in memory.
 
-import type { PracticeData } from "@/state/atoms";
+import type { PracticeData } from "@/components/files/opening";
 import {
     type ContentAction,
     conflictCopyPath,
@@ -57,6 +57,20 @@ export class ConcurrentPushError extends Error {
     }
 }
 
+/** Rewrites an action so that the remote repository is the only source of truth. */
+function toReadOnly(action: ContentAction, remote: Map<string, string>): ContentAction {
+    switch (action.kind) {
+        case "upload":
+        case "conflict":
+        case "deleteRemote":
+            return remote.has(action.path)
+                ? { kind: "download", path: action.path }
+                : { kind: "deleteLocal", path: action.path };
+        default:
+            return action;
+    }
+}
+
 export function emptyManifest(key: string): SyncManifest {
     return { key, head: null, files: {}, progress: {}, lastSync: null };
 }
@@ -68,7 +82,15 @@ export async function runSync(
     env: SyncEnv,
     client: GitHubClient,
     previous: SyncManifest,
-    options: { now?: Date; deviceName?: string } = {},
+    options: {
+        now?: Date;
+        deviceName?: string;
+        /**
+         * The device never edits repertoires (mobile app): the remote version of the
+         * content files always wins and nothing but progress is uploaded.
+         */
+        readOnlyContent?: boolean;
+    } = {},
 ): Promise<{ manifest: SyncManifest; summary: SyncSummary }> {
     const now = options.now ?? new Date();
     const summary: SyncSummary = {
@@ -108,7 +130,8 @@ export async function runSync(
 
     // 3. Content files
     const base = new Map(Object.entries(previous.files));
-    const actions: ContentAction[] = planContentSync(localContent, remoteContent, base);
+    let actions: ContentAction[] = planContentSync(localContent, remoteContent, base);
+    if (options.readOnlyContent) actions = actions.map((a) => toReadOnly(a, remoteContent));
     const entries: NewTreeEntry[] = [];
     const finalContent = new Map(localContent);
 

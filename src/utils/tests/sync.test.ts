@@ -406,6 +406,42 @@ describe("runSync", () => {
     });
 });
 
+describe("runSync read-only content (mobile)", () => {
+    test("never uploads or deletes repertoires, but uploads progress", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", "1. e4 *");
+        pc.put("Black.pgn", "1. e4 c5 *");
+        const pcSync = await runSync(pc, client(repo), emptyManifest("pc"));
+
+        const phone = new MemoryEnv();
+        const first = await runSync(phone, client(repo), emptyManifest("phone"), {
+            readOnlyContent: true,
+        });
+        expect(phone.text("White.pgn")).toBe("1. e4 *");
+
+        // Local edits / deletions / extra files on the phone are reverted, not pushed.
+        phone.put("White.pgn", "1. d4 *");
+        phone.files.delete("Black.pgn");
+        phone.put("Extra.pgn", "1. c4 *");
+        phone.setDeck("White.pgn", "0", {
+            positions: [{ fen: "A", answer: "e4", card: card("2026-10-20T08:00:00Z", 1) }],
+            logs: [log("A", "2026-10-20T08:00:00Z")],
+        });
+        await runSync(phone, client(repo), first.manifest, { readOnlyContent: true });
+        expect(phone.text("White.pgn")).toBe("1. e4 *");
+        expect(phone.text("Black.pgn")).toBe("1. e4 c5 *");
+        expect(phone.text("Extra.pgn")).toBeUndefined();
+        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
+        expect(repo.text("repertoires/Extra.pgn")).toBeUndefined();
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].logs).toHaveLength(1);
+
+        // The PC receives the phone's progress.
+        await runSync(pc, client(repo), pcSync.manifest);
+        expect(pc.getDecks("White.pgn")["0"].positions[0].card.reps).toBe(1);
+    });
+});
+
 describe("GitHubClient", () => {
     test("sends auth headers and maps errors", async () => {
         const calls: { url: string; init?: RequestInit }[] = [];

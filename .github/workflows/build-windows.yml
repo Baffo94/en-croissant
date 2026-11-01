@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "mobile/**"
+      - ".github/workflows/build-android.yml"
   workflow_dispatch:
 
 jobs:

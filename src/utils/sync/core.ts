@@ -2,7 +2,7 @@
 // Nothing in this file touches the network, the filesystem or localStorage, so it
 // can be unit tested and reused by the mobile app.
 
-import type { PracticeData } from "@/state/atoms";
+import type { PracticeData } from "@/components/files/opening";
 
 /** Remote folder that mirrors the local sync folder (PGN + .info files). */
 export const REPERTOIRES_PREFIX = "repertoires/";

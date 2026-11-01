@@ -18,11 +18,10 @@ import type {
     AsyncStringStorage,
     SyncStorage,
 } from "jotai/vanilla/utils/atomWithStorage";
-import type { ReviewLog } from "ts-fsrs";
 import { z } from "zod";
 import type { BestMoves, GoMode } from "@/bindings";
 import { DEFAULT_TIME_CONTROL, type OpponentSettings } from "@/components/boards/OpponentForm";
-import { type Position, positionSchema } from "@/components/files/opening";
+import { type PracticeData, positionSchema } from "@/components/files/opening";
 import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import { positionFromFen, swapMove } from "@/utils/chessops";
 import type { SuccessDatabaseInfo } from "@/utils/db";
@@ -514,10 +513,7 @@ const practiceDataSchema = z.object({
     logs: reviewLogSchema.array(),
 });
 
-export type PracticeData = {
-    positions: Position[];
-    logs: (ReviewLog & { fen: string })[];
-};
+export type { PracticeData };
 
 export const deckAtomFamily = atomFamily(
     ({ file, game }: { file: string; game: number }) =>

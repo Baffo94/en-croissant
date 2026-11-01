@@ -5,6 +5,9 @@
     "src-tauri/**/*",
     ".github/**/*",
     "src/bindings/generated.ts",
-    "src/routeTree.gen.ts"
+    "src/routeTree.gen.ts",
+    "mobile/android/**",
+    "mobile/node_modules/**",
+    "mobile/dist/**"
   ]
 }

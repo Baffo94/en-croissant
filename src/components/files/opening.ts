@@ -1,7 +1,13 @@
 import type { SetStateAction } from "react";
-import { type Card, createEmptyCard, fsrs, type Grade, generatorParameters } from "ts-fsrs";
+import {
+    type Card,
+    createEmptyCard,
+    fsrs,
+    type Grade,
+    generatorParameters,
+    type ReviewLog,
+} from "ts-fsrs";
 import { z } from "zod";
-import type { PracticeData } from "@/state/atoms";
 import { isPrefix } from "@/utils/misc";
 import { type TreeNode, treeIterator } from "@/utils/treeReducer";
 
@@ -19,6 +25,12 @@ export type Position = {
     fen: string;
     answer: string;
     card: Card;
+};
+
+/** Practice deck of one game: positions to train and the review history. */
+export type PracticeData = {
+    positions: Position[];
+    logs: (ReviewLog & { fen: string })[];
 };
 
 export function buildFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
