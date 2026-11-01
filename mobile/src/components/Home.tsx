@@ -30,7 +30,15 @@ export function Home({
   const status = useSyncStatus();
   const entries = useMemo(() => listRepertoires({ files, decks }), [files, decks]);
 
-  const totalDue = entries.reduce((n, e) => n + e.stats.due + e.stats.unseen, 0);
+  const totals = entries.reduce(
+    (t, e) => ({
+      due: t.due + e.stats.due,
+      unseen: t.unseen + e.stats.unseen,
+      positions: t.positions + e.stats.total,
+    }),
+    { due: 0, unseen: 0, positions: 0 },
+  );
+  const totalDue = totals.due + totals.unseen;
 
   return (
     <div className="screen">
@@ -87,8 +95,8 @@ export function Home({
             ))}
           </ul>
           <p className="legend">
-            <span className="pill due">n</span> da ripassare · <span className="pill new">n</span>{" "}
-            nuove · totale posizioni
+            Totale: <span className="pill due">{totals.due}</span> da ripassare ·{" "}
+            <span className="pill new">{totals.unseen}</span> nuove · {totals.positions} posizioni
           </p>
         </>
       )}
