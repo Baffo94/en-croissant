@@ -120,6 +120,57 @@ export function planContentSync(
     return actions;
 }
 
+export type Rename = { from: string; to: string; side: "local" | "remote" };
+
+/**
+ * Finds repertoires that were renamed or moved: a PGN that disappeared on one side
+ * while a PGN with exactly the same content appeared on the same side.
+ * - local rename (this device): deleteRemote(from) + upload(to), same blob
+ * - remote rename (another device): deleteLocal(from) + download(to), same blob
+ */
+export function detectRenames(
+    actions: ContentAction[],
+    local: Map<string, string>,
+    remote: Map<string, string>,
+): Rename[] {
+    const isPgn = (p: string) => p.toLowerCase().endsWith(".pgn");
+    const renames: Rename[] = [];
+    const pair = (
+        gone: string[],
+        added: string[],
+        goneSha: (p: string) => string | undefined,
+        addedSha: (p: string) => string | undefined,
+        side: Rename["side"],
+    ) => {
+        const free = new Set(added);
+        for (const from of gone) {
+            const sha = goneSha(from);
+            if (!sha) continue;
+            const to = [...free].find((q) => addedSha(q) === sha);
+            if (!to) continue;
+            free.delete(to);
+            renames.push({ from, to, side });
+        }
+    };
+    const paths = (kind: ContentAction["kind"]) =>
+        actions.filter((a) => a.kind === kind && isPgn(a.path)).map((a) => a.path);
+    pair(
+        paths("deleteRemote"),
+        paths("upload").filter((q) => !remote.has(q)),
+        (p) => remote.get(p),
+        (q) => local.get(q),
+        "local",
+    );
+    pair(
+        paths("deleteLocal"),
+        paths("download").filter((q) => !local.has(q)),
+        (p) => local.get(p),
+        (q) => remote.get(q),
+        "remote",
+    );
+    return renames;
+}
+
 /** "Openings/Sicilian.pgn" -> "Openings/Sicilian (conflict 2026-11-01 1530).pgn" */
 export function conflictCopyPath(path: string, date: Date): string {
     const pad = (n: number) => n.toString().padStart(2, "0");

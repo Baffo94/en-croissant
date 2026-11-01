@@ -5,6 +5,7 @@ import type { PracticeData } from "@/components/files/opening";
 import {
     type ContentAction,
     conflictCopyPath,
+    detectRenames,
     gitBlobSha,
     isContentPath,
     isEmptyDeck,
@@ -28,6 +29,8 @@ export interface SyncEnv {
     /** Practice decks of a PGN file in the sync folder, keyed by game index. */
     getDecks(relPgn: string): Record<string, PracticeData>;
     setDeck(relPgn: string, game: string, deck: PracticeData): void;
+    /** Moves the practice decks of a renamed/moved PGN (merging into existing ones). */
+    moveDecks(fromRelPgn: string, toRelPgn: string): void;
 }
 
 export type SyncManifest = {
@@ -47,6 +50,8 @@ export type SyncSummary = {
     deleted: number;
     conflicts: string[];
     progressUpdated: number;
+    /** Repertoires recognised as renamed or moved (progress follows them). */
+    renamed: number;
     committed: boolean;
 };
 
@@ -99,6 +104,7 @@ export async function runSync(
         deleted: 0,
         conflicts: [],
         progressUpdated: 0,
+        renamed: 0,
         committed: false,
     };
 
@@ -141,6 +147,16 @@ export async function runSync(
         finalContent.set(rel, sha);
         summary.uploaded++;
     };
+
+    // Renamed/moved repertoires keep their progress. Decks are moved before any file is
+    // deleted; for local renames the old remote progress is merged into the new path.
+    const renamedProgress = new Map<string, string>();
+    for (const rename of detectRenames(actions, localContent, remoteContent)) {
+        env.moveDecks(rename.from, rename.to);
+        const oldProgress = remoteProgress.get(progressPathFor(rename.from));
+        if (rename.side === "local" && oldProgress) renamedProgress.set(rename.to, oldProgress);
+        summary.renamed++;
+    }
 
     for (const action of actions) {
         const rel = action.path;
@@ -191,7 +207,8 @@ export async function runSync(
     for (const relPgn of pgnFiles) {
         const progressPath = progressPathFor(relPgn);
         wantedProgress.add(progressPath);
-        const remoteSha = remoteProgress.get(progressPath);
+        const shaAtPath = remoteProgress.get(progressPath);
+        const remoteSha = shaAtPath ?? renamedProgress.get(relPgn);
 
         // Download only if it changed since our last sync: otherwise everything in it
         // was already merged into the local decks.
@@ -217,12 +234,12 @@ export async function runSync(
         }
 
         if (Object.keys(merged).length === 0) {
-            if (remoteSha) progressManifest[progressPath] = remoteSha;
+            if (shaAtPath) progressManifest[progressPath] = shaAtPath;
             continue;
         }
         const bytes = encoder.encode(serializeProgress(merged));
         let sha = await gitBlobSha(bytes);
-        if (sha !== remoteSha) {
+        if (sha !== shaAtPath) {
             sha = await client.createBlob(bytes);
             entries.push({ path: progressPath, mode: "100644", type: "blob", sha });
         }

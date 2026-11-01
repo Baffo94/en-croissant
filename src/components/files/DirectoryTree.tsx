@@ -30,6 +30,7 @@ import classes from "./DirectoryTree.module.css";
 import type { Directory, FileMetadata } from "./file";
 import { getStats } from "./opening";
 import { FileIcon } from "./FileIcon";
+import { moveDecks } from "@/utils/practiceDecks";
 
 type DragContextType = {
   draggingPath: string | null;
@@ -373,6 +374,8 @@ function DirectoryNode({
             targetPath.replace(".pgn", ".info"),
           ).catch(() => {});
         }
+        // Practice progress is stored by path: let it follow the file or folder.
+        moveDecks(sourcePath, targetPath);
         await refreshDirectory();
         setExpandedIds((prev) => (prev.includes(targetId!) ? prev : [...prev, targetId!]));
 

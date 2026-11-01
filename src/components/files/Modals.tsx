@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { createFile } from "@/utils/files";
 import GenericCard from "../common/GenericCard";
 import type { Directory, FileMetadata, FileType } from "./file";
+import { moveDecks } from "@/utils/practiceDecks";
 
 const FILE_TYPES = [
   { label: "Game", value: "game" },
@@ -157,6 +158,8 @@ export function EditModal({
 
     await rename(metadata.path, newPGNPath);
     await rename(metadataPath.replace(".pgn", ".info"), newPGNPath.replace(".pgn", ".info"));
+    // Practice progress is stored by path: let it follow the file.
+    if (newPGNPath !== metadata.path) moveDecks(metadata.path, newPGNPath);
 
     mutate();
     setSelected((selected) =>

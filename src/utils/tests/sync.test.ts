@@ -273,6 +273,16 @@ class MemoryEnv implements SyncEnv {
     setDeck(rel: string, game: string, deck: PracticeData) {
         this.decks.set(rel, { ...(this.decks.get(rel) ?? {}), [game]: structuredClone(deck) });
     }
+    moveDecks(from: string, to: string) {
+        const old = this.decks.get(from);
+        if (!old) return;
+        const target = { ...(this.decks.get(to) ?? {}) };
+        for (const [game, deck] of Object.entries(old)) {
+            target[game] = mergeDecks(target[game] ?? { positions: [], logs: [] }, deck);
+        }
+        this.decks.set(to, target);
+        this.decks.delete(from);
+    }
     put(rel: string, text: string) {
         this.files.set(rel, enc.encode(text));
     }
@@ -439,6 +449,87 @@ describe("runSync read-only content (mobile)", () => {
         // The PC receives the phone's progress.
         await runSync(pc, client(repo), pcSync.manifest);
         expect(pc.getDecks("White.pgn")["0"].positions[0].card.reps).toBe(1);
+    });
+});
+
+describe("renames", () => {
+    const reviewed = (fen: string, when: string): PracticeData => ({
+        positions: [{ fen, answer: "e4", card: card(when, 1) }],
+        logs: [log(fen, when)],
+    });
+
+    test("renaming on the PC moves progress, also for the phone", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", "1. e4 *");
+        pc.setDeck("White.pgn", "0", reviewed("A", "2026-10-01T10:00:00Z"));
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+
+        const phone = new MemoryEnv();
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("phone"), {
+            readOnlyContent: true,
+        });
+        // The phone reviews another position and syncs before the PC renames.
+        const deck = phone.getDecks("White.pgn")["0"];
+        deck.positions.push({ fen: "B", answer: "d4", card: card("2026-10-05T10:00:00Z", 1) });
+        deck.logs.push(log("B", "2026-10-05T10:00:00Z"));
+        phone.setDeck("White.pgn", "0", deck);
+        const phoneSecond = await runSync(phone, client(repo), phoneFirst.manifest, {
+            readOnlyContent: true,
+        });
+
+        // Rename + move into a folder on the PC.
+        pc.files.set("Openings/Bianco.pgn", pc.files.get("White.pgn")!);
+        pc.files.delete("White.pgn");
+        // (decks are still stored under the old name, as after a rename in Explorer)
+        const pcSecond = await runSync(pc, client(repo), pcFirst.manifest);
+        expect(pcSecond.summary.renamed).toBe(1);
+        expect(repo.text("repertoires/White.pgn")).toBeUndefined();
+        expect(repo.text("progress/White.json")).toBeUndefined();
+        const moved = parseProgress(repo.text("progress/Openings/Bianco.json")!)["0"];
+        expect(moved.logs.map((l) => l.fen).sort()).toEqual(["A", "B"]);
+        expect(pc.getDecks("Openings/Bianco.pgn")["0"].logs).toHaveLength(2);
+        expect(pc.getDecks("White.pgn")).toEqual({});
+
+        // The phone follows the rename without losing its decks.
+        const phoneThird = await runSync(phone, client(repo), phoneSecond.manifest, {
+            readOnlyContent: true,
+        });
+        expect(phoneThird.summary.renamed).toBe(1);
+        expect(phone.text("White.pgn")).toBeUndefined();
+        expect(phone.text("Openings/Bianco.pgn")).toBe("1. e4 *");
+        expect(phone.getDecks("Openings/Bianco.pgn")["0"].logs).toHaveLength(2);
+        expect(phone.getDecks("White.pgn")).toEqual({});
+    });
+
+    test("a renamed and edited file is not treated as a rename", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", "1. e4 *");
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        pc.files.delete("White.pgn");
+        pc.put("Bianco.pgn", "1. e4 e5 *");
+        const second = await runSync(pc, client(repo), first.manifest);
+        expect(second.summary.renamed).toBe(0);
+        expect(repo.text("repertoires/Bianco.pgn")).toBe("1. e4 e5 *");
+    });
+
+    test("two files with the same content are paired one to one", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("A.pgn", "1. e4 *");
+        pc.put("B.pgn", "1. e4 *");
+        pc.setDeck("A.pgn", "0", reviewed("A", "2026-10-01T10:00:00Z"));
+        pc.setDeck("B.pgn", "0", reviewed("B", "2026-10-01T10:00:00Z"));
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        pc.files.set("C.pgn", pc.files.get("A.pgn")!);
+        pc.files.set("D.pgn", pc.files.get("B.pgn")!);
+        pc.files.delete("A.pgn");
+        pc.files.delete("B.pgn");
+        const second = await runSync(pc, client(repo), first.manifest);
+        expect(second.summary.renamed).toBe(2);
+        const fens = ["C", "D"].map((n) => pc.getDecks(`${n}.pgn`)["0"].positions[0].fen).sort();
+        expect(fens).toEqual(["A", "B"]);
     });
 });
 

@@ -10,6 +10,7 @@ import {
     type SyncEnv,
     type SyncSummary,
 } from "@/utils/sync/engine";
+import { emptyDeck, mergeDecks } from "@/utils/sync/core";
 import { GitHubClient } from "@/utils/sync/github";
 import { decodeBase64, encodeBase64, getState, updateState, type Config } from "./state";
 
@@ -58,6 +59,19 @@ const memoryEnv: SyncEnv = {
     },
     getDecks(rel) {
         return structuredClone(getState().decks[rel] ?? {}) as Record<string, PracticeData>;
+    },
+    moveDecks(from, to) {
+        updateState((s) => {
+            const old = s.decks[from];
+            if (!old) return s;
+            const target = { ...s.decks[to] };
+            for (const [game, deck] of Object.entries(old)) {
+                target[game] = mergeDecks(target[game] ?? emptyDeck(), deck);
+            }
+            const decks = { ...s.decks, [to]: target };
+            delete decks[from];
+            return { ...s, decks };
+        });
     },
     setDeck(rel, game, deck) {
         updateState((s) => ({

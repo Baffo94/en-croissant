@@ -9,6 +9,7 @@ import { atom, getDefaultStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { deckAtomFamily, type PracticeData } from "@/state/atoms";
 import { getDocumentDir } from "@/utils/directories";
+import { moveDecks } from "@/utils/practiceDecks";
 import {
     baseName,
     emptyDeck,
@@ -222,6 +223,10 @@ export function createTauriEnv(folder: string): SyncEnv {
                 }
             }
             return decks;
+        },
+        moveDecks(fromRel, toRel) {
+            const moved = moveDecks(abs(fromRel), abs(toRel));
+            info(`sync: ${fromRel} renamed to ${toRel}, ${moved} practice deck(s) moved`);
         },
         setDeck(relPgn, game, deck) {
             const store = getDefaultStore();
