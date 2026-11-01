@@ -1,5 +1,6 @@
 import { App as CapApp } from "@capacitor/app";
 import { useEffect, useRef, useState } from "react";
+import { handleBack } from "./back";
 import { Home } from "./components/Home";
 import { Practice } from "./components/Practice";
 import { Settings } from "./components/Settings";
@@ -25,6 +26,7 @@ export function App() {
 
     const subs = [
       CapApp.addListener("backButton", () => {
+        if (handleBack()) return;
         if (screenRef.current.kind !== "home") setScreen({ kind: "home" });
         else void CapApp.exitApp();
       }),

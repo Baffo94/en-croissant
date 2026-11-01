@@ -18,6 +18,7 @@ import { findFen } from "@/utils/treeReducer";
 import { prepareDeck } from "../repertoires";
 import { setDeck } from "../state";
 import { scheduleSync, syncNow } from "../sync";
+import { Analysis } from "./Analysis";
 import { Board } from "./Board";
 
 type Phase =
@@ -73,6 +74,9 @@ export function Practice({
   const [currentFen, setCurrentFen] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "waiting" });
   const [session, setSession] = useState({ correct: 0, incorrect: 0 });
+  /** Ply shown while browsing the moves that led to the position (null = live). */
+  const [viewPly, setViewPly] = useState<number | null>(null);
+  const [analysis, setAnalysis] = useState<{ moves: string[]; ply: number } | null>(null);
 
   // Sync when leaving the screen.
   useEffect(() => () => void syncNow().catch(() => {}), []);
@@ -85,6 +89,7 @@ export function Practice({
 
   const pickNext = (d: PracticeData, m: "due" | "all", q: string[]) => {
     setPhase({ kind: "waiting" });
+    setViewPly(null);
     if (m === "all") {
       setCurrentFen(q[0] ?? null);
       setQueue(q);
@@ -195,6 +200,41 @@ export function Practice({
     pickNext(deck!, "due", []);
   }
 
+  // Positions along the line from the start to the current card.
+  const nodes: TreeNode[] = [pgn.root];
+  for (const i of path) nodes.push(nodes[nodes.length - 1].children[i]);
+  const livePly = path.length;
+  const browsing = position !== null && viewPly !== null && viewPly < livePly;
+  const revealed =
+    phase.kind === "correct"
+      ? phase.san
+      : phase.kind === "incorrect"
+        ? position?.answer
+        : undefined;
+
+  if (analysis) {
+    return (
+      <Analysis
+        startFen={pgn.root.fen}
+        moves={analysis.moves}
+        initialPly={analysis.ply}
+        orientation={pgn.orientation}
+        onBack={() => setAnalysis(null)}
+      />
+    );
+  }
+
+  function openAnalysis() {
+    const sans = nodes.slice(1).map((n) => n.san ?? "");
+    if (browsing) {
+      setAnalysis({ moves: sans, ply: viewPly! });
+    } else {
+      const moves = revealed ? [...sans, revealed] : sans;
+      // After a correct answer the board already shows the move that was played.
+      setAnalysis({ moves, ply: phase.kind === "correct" ? sans.length + 1 : sans.length });
+    }
+  }
+
   let boardFen = position?.fen ?? deck.positions[0]?.fen ?? pgn.root.fen;
   let shapes: DrawShape[] = [];
   let boardLastMove = lastMove;
@@ -208,6 +248,15 @@ export function Practice({
   }
   if (position && phase.kind === "incorrect" && phase.answer) {
     shapes = [arrow(phase.answer, "green")];
+  }
+  if (browsing) {
+    const node = nodes[viewPly!];
+    boardFen = node.fen;
+    shapes = [];
+    boardLastMove =
+      node.move && "from" in node.move
+        ? [makeSquare(node.move.from), makeSquare(node.move.to)]
+        : undefined;
   }
 
   const reviewTimes =
@@ -228,10 +277,73 @@ export function Practice({
         orientation={pgn.orientation}
         lastMove={boardLastMove}
         shapes={shapes}
-        interactive={!!position && phase.kind === "waiting"}
+        interactive={!!position && phase.kind === "waiting" && !browsing}
         onMove={onMove}
       />
-      <div className="line">{position ? line.text || "Posizione iniziale" : ""}</div>
+      {position && (
+        <>
+          <div className="moves compact">
+            {nodes.slice(1).map((node, i) => {
+              const ply = i + 1;
+              const white = node.halfMoves % 2 === 1;
+              const number = white
+                ? `${Math.ceil(node.halfMoves / 2)}. `
+                : i === 0
+                  ? `${Math.ceil(node.halfMoves / 2)}... `
+                  : "";
+              return (
+                <button
+                  key={ply}
+                  type="button"
+                  className={`move ${(viewPly ?? livePly) === ply ? "current" : ""}`}
+                  onClick={() => setViewPly(ply === livePly ? null : ply)}
+                >
+                  <span className="num">{number}</span>
+                  {node.san}
+                </button>
+              );
+            })}
+            {livePly === 0 && <span className="dim">Posizione iniziale</span>}
+          </div>
+          <div className="nav">
+            <button
+              type="button"
+              aria-label="Inizio"
+              disabled={(viewPly ?? livePly) === 0}
+              onClick={() => setViewPly(livePly === 0 ? null : 0)}
+            >
+              ⏮
+            </button>
+            <button
+              type="button"
+              aria-label="Indietro"
+              disabled={(viewPly ?? livePly) === 0}
+              onClick={() => setViewPly((viewPly ?? livePly) - 1)}
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              aria-label="Avanti"
+              disabled={!browsing}
+              onClick={() => setViewPly(viewPly! + 1 >= livePly ? null : viewPly! + 1)}
+            >
+              ▶
+            </button>
+            <button
+              type="button"
+              aria-label="Torna alla posizione"
+              disabled={!browsing}
+              onClick={() => setViewPly(null)}
+            >
+              ⏭
+            </button>
+            <button type="button" className="analyse" onClick={openAnalysis}>
+              Analizza
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="panel">
         {!position && (
@@ -267,7 +379,13 @@ export function Practice({
           </div>
         )}
 
-        {position && phase.kind === "waiting" && (
+        {browsing && (
+          <p className="hint">
+            Stai rivedendo le mosse che portano alla posizione. Tocca ⏭ per tornare all'allenamento.
+          </p>
+        )}
+
+        {position && phase.kind === "waiting" && !browsing && (
           <p className="hint">
             Gioca la mossa del tuo repertorio ({pgn.orientation === "white" ? "Bianco" : "Nero"}).
           </p>

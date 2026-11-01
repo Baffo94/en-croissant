@@ -426,3 +426,160 @@ button.icon {
   padding: 8px 12px;
   font-size: 14px;
 }
+
+/* Move list and navigation (practice + analysis) */
+
+.moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  padding: 8px 12px 4px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.moves.compact {
+  max-height: 64px;
+}
+
+.move {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 14px;
+}
+
+.move .num {
+  color: var(--dim);
+}
+
+.move.current {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.move.explored {
+  font-style: italic;
+  color: var(--blue);
+}
+
+.dim {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.nav {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.nav button {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 16px;
+}
+
+.nav button.analyse {
+  flex: 2;
+  font-size: 14px;
+  font-weight: 600;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Analysis */
+
+.engine-toggle {
+  font-size: 12px;
+  padding: 6px 10px;
+  color: var(--dim);
+}
+
+.engine-toggle.on {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.eval {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
+.eval-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 5px;
+  background: #3a3b3f;
+  overflow: hidden;
+}
+
+.eval-white {
+  height: 100%;
+  background: #f1f3f5;
+  transition: width 0.3s ease;
+}
+
+.eval-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 84px;
+}
+
+.eval-text strong {
+  font-size: 16px;
+}
+
+.eval-text span {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px;
+}
+
+.engine-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.engine-line .score {
+  font-weight: 700;
+  min-width: 52px;
+  font-size: 14px;
+}
+
+.engine-line .score.plus {
+  color: var(--text);
+}
+
+.engine-line .score.minus {
+  color: var(--dim);
+}
+
+.engine-line .pv {
+  font-size: 13px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.engine-credit {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  margin: 8px 0 0;
+}
