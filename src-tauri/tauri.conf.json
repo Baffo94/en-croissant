@@ -39,7 +39,7 @@
       "resources/vision/": "vision/"
     },
     "targets": "all",
-    "createUpdaterArtifacts": "v1Compatible"
+    "createUpdaterArtifacts": false
   },
   "build": {
     "beforeDevCommand": "pnpm prepare:aix-extension && pnpm start-vite",
@@ -65,12 +65,6 @@
           "index": 1,
           "takesValue": true
         }
-      ]
-    },
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdGOTBFNjg2MzFGM0RDODUKUldTRjNQTXhodWFRZjc2MTNVeXRONGJkRjdGUXlCeW1MSlZESUczT0U4eE5hKzBmY3M2S0U2L0oK",
-      "endpoints": [
-        "https://www.encroissant.org/updates"
       ]
     }
   },

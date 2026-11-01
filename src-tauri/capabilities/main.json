@@ -26,7 +26,6 @@
         "deep-link:default",
         "os:default",
         "cli:default",
-        "updater:default",
         "process:default",
         "log:default",
         "fs:default",

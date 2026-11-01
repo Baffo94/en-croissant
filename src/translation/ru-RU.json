@@ -493,7 +493,6 @@
     "Menu.File.OpenFile": "Открыть файл",
     "Menu.Help": "Помощь",
     "Menu.Help.About": "О программе",
-    "Menu.Help.CheckUpdate": "Проверить обновления",
     "Menu.Help.ClearSavedData": "Очистить сохранённые данные",
     "Menu.Help.Documentation": "Документация",
     "Menu.Help.OpenLogs": "Открыть логи",

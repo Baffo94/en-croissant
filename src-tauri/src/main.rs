@@ -291,10 +291,6 @@ fn main() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
 
-            #[cfg(desktop)]
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())?;
-
             log::info!("Finished rust initialization");
 
             Ok(())
