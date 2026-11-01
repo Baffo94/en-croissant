@@ -242,4 +242,11 @@ export async function saveToFile({
     }
     unwrap(await commands.writeGame(filePath, fileOrigin?.gameNumber ?? 0, pgn));
     store.getState().save();
+    // Dynamic import avoids a circular dependency (sync -> atoms -> tabs).
+    import("@/utils/sync")
+        .then(({ scheduleSync }) => scheduleSync(SAVE_SYNC_DELAY, filePath))
+        .catch(() => {});
 }
+
+/** Sync a repertoire in the sync folder shortly after it is saved. */
+const SAVE_SYNC_DELAY = 10_000;

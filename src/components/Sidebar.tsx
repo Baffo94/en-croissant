@@ -13,6 +13,7 @@ import { Link, useMatchRoute } from "@tanstack/react-router";
 import cx from "clsx";
 import { useTranslation } from "react-i18next";
 import classes from "./Sidebar.module.css";
+import { SyncButton } from "./SyncButton";
 
 interface NavbarLinkProps {
   icon: Icon;
@@ -65,6 +66,7 @@ export function SideBar() {
       </AppShellSection>
       <AppShellSection>
         <Stack justify="center" gap={0}>
+          <SyncButton />
           <NavbarLink icon={IconSettings} label={t("SideBar.Settings")} url="/settings" />
         </Stack>
       </AppShellSection>

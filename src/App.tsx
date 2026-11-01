@@ -13,7 +13,7 @@ import { Notifications } from "@mantine/notifications";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { getMatches } from "@tauri-apps/plugin-cli";
 import { listen } from "@tauri-apps/api/event";
-import { attachConsole, error, info, warn } from "@tauri-apps/plugin-log";
+import { attachConsole, info, warn } from "@tauri-apps/plugin-log";
 import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { ContextMenuProvider } from "mantine-contextmenu";
 import posthog from "posthog-js";
@@ -63,6 +63,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import ErrorComponent from "@/components/ErrorComponent";
 import { getDatabasesDir, getDocumentDir, getEnginesDir, getPuzzlesDir } from "@/utils/directories";
 import { initUserAgent } from "@/utils/http";
+import { scheduleSync } from "@/utils/sync";
 import { routeTree } from "./routeTree.gen";
 
 export type Dirs = {
@@ -116,6 +117,8 @@ declare module "@tanstack/react-router" {
   }
 }
 
+const STARTUP_SYNC_DELAY = 2_000;
+
 const navigateToBoard = () => router.navigate({ to: "/" });
 
 function useAppStartup() {
@@ -133,6 +136,9 @@ function useAppStartup() {
 
       const detach = await attachConsole();
       info("React app started successfully");
+
+      // Pull repertoires/progress from the sync repository (no-op if not configured).
+      scheduleSync(STARTUP_SYNC_DELAY);
 
       const store = getDefaultStore();
       const telemetryEnabled = store.get(telemetryEnabledAtom);

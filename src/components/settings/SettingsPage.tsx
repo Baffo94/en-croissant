@@ -17,6 +17,7 @@ import {
   IconBook,
   IconBrush,
   IconChess,
+  IconCloud,
   IconFlag,
   IconFolder,
   IconKeyboard,
@@ -75,6 +76,7 @@ import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import classes from "./SettingsPage.module.css";
 import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
+import SyncSettings from "./SyncSettings";
 import ThemeButton from "./ThemeButton";
 import VolumeSlider from "./VolumeSlider";
 
@@ -87,6 +89,7 @@ type SettingCategory =
   | "keybinds"
   | "directories"
   | "repertoire"
+  | "sync"
   | "privacy";
 
 interface SettingItem {
@@ -759,6 +762,11 @@ export default function Page() {
         description: t("Settings.Repertoire.Desc"),
         icon: <IconBook size="1rem" />,
       },
+      sync: {
+        title: t("Settings.Sync"),
+        description: t("Settings.Sync.Desc"),
+        icon: <IconCloud size="1rem" />,
+      },
       privacy: {
         title: t("Settings.Privacy"),
         description: t("Settings.Privacy.Desc"),
@@ -901,6 +909,9 @@ export default function Page() {
             <Tabs.Tab value="repertoire" leftSection={<IconBook size="1rem" />}>
               {t("Settings.Repertoire")}
             </Tabs.Tab>
+            <Tabs.Tab value="sync" leftSection={<IconCloud size="1rem" />}>
+              {t("Settings.Sync")}
+            </Tabs.Tab>
             <Tabs.Tab value="privacy" leftSection={<IconShield size="1rem" />}>
               {t("Settings.Privacy")}
             </Tabs.Tab>
@@ -1016,6 +1027,16 @@ export default function Page() {
                     {t("Settings.Repertoire.Desc")}
                   </Text>
                   {renderCategorySettings("repertoire")}
+                </Tabs.Panel>
+
+                <Tabs.Panel value="sync">
+                  <Text size="lg" fw={500} className={classes.title}>
+                    {t("Settings.Sync")}
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={3} mb="lg">
+                    {t("Settings.Sync.Desc")}
+                  </Text>
+                  <SyncSettings />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="privacy">

@@ -60,9 +60,13 @@ import {
   practiceStateAtom,
   practiceAutoDifficultyAtom,
 } from "@/state/atoms";
+import { scheduleSync } from "@/utils/sync";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import { findFen, getNodeAtPath } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
+
+/** Sync practice progress once the user stops reviewing for a while. */
+const PRACTICE_SYNC_DELAY = 30_000;
 
 function PracticePanel() {
   const { t } = useTranslation();
@@ -205,6 +209,8 @@ function PracticePanel() {
           const grade = Number(practiceAutoDifficulty) as 1 | 2 | 3 | 4;
 
           updateCardPerformance(setDeck, positionIndex, card, grade);
+
+          if (tabFile?.path) scheduleSync(PRACTICE_SYNC_DELAY, tabFile.path);
           setSessionStats((prev) => ({
             ...prev,
             correct: prev.correct + 1,
@@ -226,6 +232,7 @@ function PracticePanel() {
     practiceAutoDifficulty,
     deck.positions,
     setDeck,
+    tabFile?.path,
   ]);
 
   function handleQualityRating(grade: 1 | 2 | 3 | 4) {
@@ -235,6 +242,8 @@ function PracticePanel() {
     const card = deck.positions[positionIndex].card;
 
     updateCardPerformance(setDeck, positionIndex, card, grade);
+
+    if (tabFile?.path) scheduleSync(PRACTICE_SYNC_DELAY, tabFile.path);
     setSessionStats((prev) => ({
       ...prev,
       correct: prev.correct + 1,
@@ -639,6 +648,7 @@ function PracticePanel() {
         onConfirm={() => {
           const cards = buildFromTree(root, headers.orientation || "white", headers.start || []);
           setDeck({ positions: cards, logs: [] });
+          if (tabFile?.path) scheduleSync(PRACTICE_SYNC_DELAY, tabFile.path);
           setPracticeState({ phase: "idle" });
           setPracticePath(null);
           setInvisible(false);
