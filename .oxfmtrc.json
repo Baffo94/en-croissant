@@ -8,6 +8,7 @@
     "src/routeTree.gen.ts",
     "mobile/android/**",
     "mobile/node_modules/**",
-    "mobile/dist/**"
+    "mobile/dist/**",
+    "mobile/public/**"
   ]
 }

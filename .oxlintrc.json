@@ -1,6 +1,14 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["eslint", "import", "react", "react-perf", "oxc", "typescript", "vitest"],
+  "plugins": [
+    "eslint",
+    "import",
+    "react",
+    "react-perf",
+    "oxc",
+    "typescript",
+    "vitest"
+  ],
   "categories": {},
   "rules": {},
   "settings": {
@@ -41,6 +49,7 @@
     "src-tauri/**/*",
     ".github/**/*",
     "src/bindings/generated.ts",
-    "src/routeTree.gen.ts"
+    "src/routeTree.gen.ts",
+    "mobile/public/**"
   ]
 }
