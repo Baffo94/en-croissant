@@ -19,9 +19,11 @@ function SyncIndicator() {
 
 export function Home({
   onOpen,
+  onTrainAll,
   onSettings,
 }: {
   onOpen: (entry: RepertoireEntry) => void;
+  onTrainAll: (entries: RepertoireEntry[]) => void;
   onSettings: () => void;
 }) {
   const files = useAppState((s) => s.files);
@@ -71,11 +73,18 @@ export function Home({
         </div>
       ) : (
         <>
-          <p className="summary">
-            {totalDue > 0
-              ? `${totalDue} posizioni da allenare oggi`
-              : "Tutto ripassato per oggi 🎉"}
-          </p>
+          <div className="summary-row">
+            <p className="summary">
+              {totalDue > 0
+                ? `${totalDue} posizioni da allenare oggi`
+                : "Tutto ripassato per oggi 🎉"}
+            </p>
+            {totalDue > 0 && (
+              <button type="button" className="primary" onClick={() => onTrainAll(entries)}>
+                Allena tutto
+              </button>
+            )}
+          </div>
           <ul className="list">
             {entries.map((e) => (
               <li key={`${e.rel}#${e.game}`}>

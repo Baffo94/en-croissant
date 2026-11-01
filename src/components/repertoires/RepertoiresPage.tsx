@@ -52,6 +52,7 @@ import { EditModal } from "@/components/files/Modals";
 import { buildFromTree, getStats, type PracticeData } from "@/components/files/opening";
 import { SyncStatusText, summaryText } from "@/components/SyncButton";
 import CreateRepertoireModal from "@/components/tabs/CreateRepertoireModal";
+import TrainAll from "./TrainAll";
 import {
   activeTabAtom,
   addRecentFileAtom,
@@ -346,6 +347,7 @@ export default function RepertoiresPage() {
   const [createDir, setCreateDir] = useState<string | undefined>(undefined);
   const [renaming, setRenaming] = useState<RepertoireFile | null>(null);
   const [deleting, setDeleting] = useState<RepertoireFile | null>(null);
+  const [trainAll, setTrainAll] = useState(false);
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
@@ -497,6 +499,15 @@ export default function RepertoiresPage() {
               </Button>
             </Group>
           )}
+          {totals.toDo > 0 && (
+            <Button
+              color="orange"
+              leftSection={<IconTarget size="1rem" />}
+              onClick={() => setTrainAll(true)}
+            >
+              {t("Repertoires.TrainAll", { count: totals.toDo })}
+            </Button>
+          )}
           <Button leftSection={<IconPlus size="1rem" />} onClick={startCreate}>
             {t("Repertoires.New")}
           </Button>
@@ -557,6 +568,14 @@ export default function RepertoiresPage() {
         )}
       </ScrollArea>
 
+      <TrainAll
+        opened={trainAll}
+        files={(files ?? []).map((f) => ({ path: f.path, name: f.name }))}
+        onClose={() => {
+          setTrainAll(false);
+          mutate();
+        }}
+      />
       <CreateRepertoireModal
         opened={createOpen}
         setOpened={setCreateOpen}

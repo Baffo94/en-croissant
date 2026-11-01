@@ -11,10 +11,17 @@ import type { TreeNode } from "../treeReducer";
 function tokensOf(children: ChildNode<PgnNodeData>[], out: Token[] = []): Token[] {
     if (children.length === 0) return out;
     const [main, ...alts] = children;
+    const extras = (node: ChildNode<PgnNodeData>) => {
+        for (const nag of node.data.nags ?? []) out.push({ type: "Nag", value: `$${nag}` });
+        for (const comment of node.data.comments ?? [])
+            out.push({ type: "Comment", value: comment });
+    };
     out.push({ type: "San", value: main.data.san });
+    extras(main);
     for (const alt of alts) {
         out.push({ type: "ParenOpen" } as Token);
         out.push({ type: "San", value: alt.data.san });
+        extras(alt);
         tokensOf(alt.children, out);
         out.push({ type: "ParenClose" } as Token);
     }
@@ -34,12 +41,12 @@ const PGNS = [
     `[Event "White rep"]
 [Orientation "white"]
 
-1. e4 e5 (1... c5 2. Nf3 d6 (2... Nc6 3. d4) (2... e6 3. d4) 3. d4) (1... e6 2. d4 d5) 2. Nf3 Nc6 (2... Nf6 3. Nxe5) 3. Bb5 a6 4. Ba4 *`,
+1. e4 e5 {Open game} (1... c5 $2 {Not in my repertoire} 2. Nf3 d6 (2... Nc6 3. d4) (2... e6 3. d4) 3. d4) (1... e6 2. d4 d5) 2. Nf3 Nc6 (2... Nf6 3. Nxe5) 3. Bb5 a6 4. Ba4 *`,
     `[Event "Black rep"]
 [Orientation "black"]
 [Start "[0]"]
 
-1. e4 {comment} c5 $1 2. Nf3 (2. c3 d5 3. exd5 Qxd5) (2. Nc3 Nc6) 2... d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 *`,
+1. e4 {comment} c5 $1 {The Sicilian [%cal Gc5d4]} 2. Nf3 $14 (2. c3 d5 3. exd5 Qxd5) (2. Nc3 Nc6) 2... d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 *`,
     `[Event "From FEN"]
 [FEN "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2"]
 [SetUp "1"]
@@ -80,5 +87,9 @@ describe("parsePgnGames matches the desktop parser", () => {
         expect(games[0].start).toEqual([0]);
         expect(games[1].orientation).toBe("white");
         expect(buildFromTree(games[0].root, "black", games[0].start).length).toBeGreaterThan(3);
+        const c5 = games[0].root.children[0].children[0];
+        expect(c5.san).toBe("c5");
+        expect(c5.comment).toBe("The Sicilian");
+        expect(c5.annotations).toEqual(["!"]);
     });
 });

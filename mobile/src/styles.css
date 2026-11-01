@@ -583,3 +583,216 @@ button.icon {
   color: var(--dim);
   margin: 8px 0 0;
 }
+
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 12px;
+}
+
+.source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  font-weight: 600;
+}
+
+.notes {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+.notes p {
+  margin: 4px 0;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.notes-label {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.move.has-note::after {
+  content: "•";
+  color: var(--accent);
+  margin-left: 2px;
+}
+
+.analysis-note {
+  margin: 4px 12px;
+}
+
+/* Tabs / explorer */
+
+.tabs,
+.segmented {
+  display: flex;
+  gap: 4px;
+  margin: 8px 12px 4px;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.tabs button,
+.segmented button {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 8px;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.tabs button.active,
+.segmented button.active {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.segmented small {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.tab-note {
+  margin: 8px 12px;
+}
+
+.explorer .segmented {
+  margin: 4px 12px 8px;
+}
+
+.opening-name {
+  margin: 0 12px 6px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.opening-name strong {
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.explorer-table {
+  width: calc(100% - 24px);
+  margin: 0 12px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.explorer-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--dim);
+  padding: 4px;
+}
+
+.explorer-table td {
+  padding: 7px 4px;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.explorer-table tr:not(.total) {
+  cursor: pointer;
+}
+
+.explorer-table tr.total td {
+  color: var(--dim);
+}
+
+.explorer-table .san {
+  font-weight: 700;
+  width: 56px;
+}
+
+.explorer-table .games {
+  width: 64px;
+  white-space: nowrap;
+}
+
+.explorer-table .games small {
+  display: block;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.wdl {
+  display: flex;
+  height: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.wdl-white {
+  background: #f1f3f5;
+  color: #212529;
+}
+
+.wdl-draw {
+  background: #868e96;
+  color: #fff;
+}
+
+.wdl-black {
+  background: #101113;
+  color: #e9ecef;
+}
+
+.explorer-error {
+  margin: 4px 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 8px;
+}
+
+.explorer-error p {
+  margin: 0 0 8px;
+}
+
+.token-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.token-form .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.token-form input {
+  flex: 1;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.link {
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.form h2 {
+  font-size: 16px;
+  margin: 8px 0 0;
+}

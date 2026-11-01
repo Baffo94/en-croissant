@@ -2,16 +2,15 @@ import { App as CapApp } from "@capacitor/app";
 import { useEffect, useRef, useState } from "react";
 import { handleBack } from "./back";
 import { Home } from "./components/Home";
-import { Practice } from "./components/Practice";
+import { Practice, type PracticeSource } from "./components/Practice";
 import { Settings } from "./components/Settings";
-import type { RepertoireEntry } from "./repertoires";
 import { flushState, getState, useAppState } from "./state";
 import { isConfigured, syncNow } from "./sync";
 
 type Screen =
   | { kind: "home" }
   | { kind: "settings" }
-  | { kind: "practice"; entry: RepertoireEntry };
+  | { kind: "practice"; sources: PracticeSource[]; title: string; mixed: boolean };
 
 export function App() {
   const configured = useAppState((s) => isConfigured(s.config));
@@ -57,17 +56,32 @@ export function App() {
   if (screen.kind === "practice") {
     return (
       <Practice
-        key={`${screen.entry.rel}#${screen.entry.game}`}
-        rel={screen.entry.rel}
-        game={screen.entry.game}
-        name={screen.entry.name}
+        key={screen.sources.map((s) => `${s.rel}#${s.game}`).join("|")}
+        sources={screen.sources}
+        title={screen.title}
+        mixed={screen.mixed}
         onBack={() => setScreen({ kind: "home" })}
       />
     );
   }
   return (
     <Home
-      onOpen={(entry) => setScreen({ kind: "practice", entry })}
+      onOpen={(entry) =>
+        setScreen({
+          kind: "practice",
+          sources: [{ rel: entry.rel, game: entry.game, name: entry.name }],
+          title: entry.name,
+          mixed: false,
+        })
+      }
+      onTrainAll={(entries) =>
+        setScreen({
+          kind: "practice",
+          sources: entries.map((e) => ({ rel: e.rel, game: e.game, name: e.name })),
+          title: "Allena tutto",
+          mixed: true,
+        })
+      }
       onSettings={() => setScreen({ kind: "settings" })}
     />
   );

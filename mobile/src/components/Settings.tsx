@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { applyPieceSet, BOARDS, PIECE_SETS } from "../boardThemes";
 import { getState, updateState, useAppState } from "../state";
+import { RATING_BUCKETS, SPEEDS } from "../explorer";
 import { Board } from "./Board";
+import { LichessTokenInput } from "./ExplorerPanel";
 import { createClient, isConfigured, parseRepository, syncNow } from "../sync";
 import { Header } from "./Practice";
 
@@ -101,6 +103,7 @@ export function Settings({ onBack, onSaved }: { onBack?: () => void; onSaved: ()
         </button>
         {message && <p className={message.kind === "error" ? "error" : "ok"}>{message.text}</p>}
       </div>
+      <ExplorerSettingsForm />
       <Appearance />
     </div>
   );
@@ -144,6 +147,51 @@ function Appearance() {
             onClick={() => set({ pieces: p.id })}
           >
             {p.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExplorerSettingsForm() {
+  const explorer = useAppState((s) => s.explorer);
+  const toggle = <T,>(list: T[], value: T) =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+  const set = (patch: Partial<typeof explorer>) =>
+    updateState((s) => ({ ...s, explorer: { ...s.explorer, ...patch } }));
+  return (
+    <div className="form">
+      <h2>Esploratore aperture Lichess</h2>
+      <p className="small">
+        Nell'analisi mostra le mosse giocate dai maestri e dai giocatori Lichess del tuo livello.
+        Lichess richiede un token personale gratuito: crealo senza selezionare alcun permesso.
+      </p>
+      <span className="label">Token Lichess</span>
+      <LichessTokenInput />
+      <span className="label">Livello dei giocatori Lichess (Elo)</span>
+      <div className="chips">
+        {RATING_BUCKETS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className={`chip ${explorer.ratings.includes(r) ? "selected" : ""}`}
+            onClick={() => set({ ratings: toggle(explorer.ratings, r).sort((a, b) => a - b) })}
+          >
+            {r === 0 ? "< 1000" : r === 2500 ? "2500+" : `${r}`}
+          </button>
+        ))}
+      </div>
+      <span className="label">Cadenze</span>
+      <div className="chips">
+        {SPEEDS.map((sp) => (
+          <button
+            key={sp.id}
+            type="button"
+            className={`chip ${explorer.speeds.includes(sp.id) ? "selected" : ""}`}
+            onClick={() => set({ speeds: toggle(explorer.speeds, sp.id) })}
+          >
+            {sp.name}
           </button>
         ))}
       </div>

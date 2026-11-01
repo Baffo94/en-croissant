@@ -554,6 +554,7 @@
     "Repertoires.Summary_other": "",
     "Repertoires.Synced": "",
     "Repertoires.Title": "",
+    "Repertoires.TrainAll_other": "",
     "Repertoires.UpToDate": "",
     "RichText.Bold": "粗体",
     "RichText.BulletList": "无序列表",
@@ -770,6 +771,22 @@
     "TimeControl.Classical": "慢棋",
     "TimeControl.Correspondence": "通讯棋",
     "TimeControl.Rapid": "快棋",
-    "TimeControl.UltraBullet": "超子弹棋"
+    "TimeControl.UltraBullet": "超子弹棋",
+    "TrainAll.Again": "",
+    "TrainAll.Close": "",
+    "TrainAll.Correct": "",
+    "TrainAll.Done": "",
+    "TrainAll.Easy": "",
+    "TrainAll.Good": "",
+    "TrainAll.Hard": "",
+    "TrainAll.InQueue_other": "",
+    "TrainAll.Loading": "",
+    "TrainAll.Next": "",
+    "TrainAll.NextReview": "",
+    "TrainAll.Prompt": "",
+    "TrainAll.SessionResult": "",
+    "TrainAll.StartPosition": "",
+    "TrainAll.Title": "",
+    "TrainAll.Wrong": ""
   }
 }

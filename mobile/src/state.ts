@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
 import type { SyncManifest } from "@/utils/sync/engine";
 import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
+import { DEFAULT_EXPLORER, type ExplorerSettings } from "./explorer";
 
 export type Config = {
     token: string;
@@ -23,6 +24,7 @@ export type AppState = {
     decks: Record<string, Record<string, PracticeData>>;
     manifest: SyncManifest | null;
     appearance: { board: string; pieces: string };
+    explorer: ExplorerSettings;
 };
 
 const FILE = "state.json";
@@ -36,6 +38,7 @@ function initialState(): AppState {
         decks: {},
         manifest: null,
         appearance: { board: DEFAULT_BOARD, pieces: DEFAULT_PIECES },
+        explorer: DEFAULT_EXPLORER,
     };
 }
 
@@ -58,6 +61,7 @@ export async function loadState(): Promise<void> {
             ...parsed,
             config: { ...initialState().config, ...parsed.config },
             appearance: { ...initialState().appearance, ...parsed.appearance },
+            explorer: { ...initialState().explorer, ...parsed.explorer },
         };
     } catch {
         state = initialState();

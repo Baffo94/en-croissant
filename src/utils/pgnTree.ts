@@ -4,8 +4,9 @@
 
 import { parseUci } from "chessops";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
-import { type ChildNode, type PgnNodeData, parsePgn } from "chessops/pgn";
+import { type ChildNode, type PgnNodeData, parseComment, parsePgn } from "chessops/pgn";
 import { makeSan, parseSan } from "chessops/san";
+import { type Annotation, ANNOTATION_INFO, NAG_INFO } from "./annotation";
 import { positionFromFen } from "./chessops";
 import { createNode, type TreeNode } from "./treeReducer";
 
@@ -33,6 +34,23 @@ function rootNode(fen: string): TreeNode {
     };
 }
 
+/** Comment text without [%cal]/[%csl]/[%eval]/[%clk] directives, like the desktop parser. */
+function commentText(comments: string[] | undefined): string {
+    return (comments ?? [])
+        .map((c) => parseComment(c).text)
+        .filter(Boolean)
+        .join("\n");
+}
+
+function annotations(nags: number[] | undefined): Annotation[] {
+    const result: Annotation[] = [];
+    for (const nag of nags ?? []) {
+        const annotation = NAG_INFO.get(`$${nag}`);
+        if (annotation) result.push(annotation);
+    }
+    return result.sort((a, b) => ANNOTATION_INFO[a].nag - ANNOTATION_INFO[b].nag);
+}
+
 function addChildren(parent: TreeNode, children: ChildNode<PgnNodeData>[]) {
     for (const child of children) {
         const [pos, error] = positionFromFen(parent.fen);
@@ -52,6 +70,8 @@ function addChildren(parent: TreeNode, children: ChildNode<PgnNodeData>[]) {
             san,
             halfMoves: parent.halfMoves + 1,
         });
+        node.comment = commentText(child.data.comments);
+        node.annotations = annotations(child.data.nags);
         parent.children.push(node);
         addChildren(node, child.children);
     }
@@ -72,6 +92,7 @@ export function parsePgnGames(text: string): PgnGame[] {
     return parsePgn(text).map((game) => {
         const fen = (game.headers.get("FEN") ?? INITIAL_FEN).trim();
         const root = rootNode(fen);
+        root.comment = commentText(game.comments);
         addChildren(root, game.moves.children);
         const orientation = game.headers.get("Orientation");
         return {

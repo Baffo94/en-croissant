@@ -3,16 +3,16 @@ import { makeSquare, type NormalMove } from "chessops";
 import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatReviewInterval,
-  getCardForReview,
   getNextReviewTimes,
   getStats,
   type PracticeData,
   updateCardPerformance,
 } from "@/components/files/opening";
 import { positionFromFen } from "@/utils/chessops";
+import type { PgnGame } from "@/utils/pgnTree";
 import type { TreeNode } from "@/utils/treeReducer";
 import { findFen } from "@/utils/treeReducer";
 import { prepareDeck } from "../repertoires";
@@ -56,66 +56,136 @@ function arrow(move: NormalMove, brush: string): DrawShape {
   return { orig: makeSquare(move.from), dest: makeSquare(move.to), brush };
 }
 
+export type PracticeSource = { rel: string; game: number; name: string };
+
+type Item = { key: string; fen: string };
+
+const keyOf = (source: PracticeSource) => `${source.rel}#${source.game}`;
+
+function shuffle<T>(items: T[]): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const NAG_TEXT: Record<string, string> = {
+  "!!": "!!",
+  "!": "!",
+  "!?": "!?",
+  "?!": "?!",
+  "?": "?",
+  "??": "??",
+};
+
+/** "Bc4!" — SAN followed by the move symbols written in the PGN. */
+function withSymbols(node: TreeNode | undefined, san: string): string {
+  const symbols = (node?.annotations ?? []).map((a) => NAG_TEXT[a] ?? "").join("");
+  return `${san}${symbols}`;
+}
+
+function Notes({ items }: { items: { label: string; text: string }[] }) {
+  const visible = items.filter((i) => i.text.trim());
+  if (visible.length === 0) return null;
+  return (
+    <div className="notes">
+      {visible.map((item) => (
+        <p key={item.label}>
+          <span className="notes-label">{item.label}</span> {item.text}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Practice session. With one source it trains a single repertoire (in the PGN's order);
+ * with `mixed` it shuffles the due positions of every source ("Allena tutto").
+ */
 export function Practice({
-  rel,
-  game,
-  name,
+  sources,
+  title,
+  mixed = false,
   onBack,
 }: {
-  rel: string;
-  game: number;
-  name: string;
+  sources: PracticeSource[];
+  title: string;
+  mixed?: boolean;
   onBack: () => void;
 }) {
-  const prepared = useMemo(() => prepareDeck(rel, game), [rel, game]);
-  const [deck, setLocalDeck] = useState<PracticeData | null>(prepared?.deck ?? null);
+  const prepared = useMemo(() => {
+    const result: Record<string, { source: PracticeSource; pgn: PgnGame }> = {};
+    const decks: Record<string, PracticeData> = {};
+    for (const source of sources) {
+      const p = prepareDeck(source.rel, source.game);
+      if (!p) continue;
+      result[keyOf(source)] = { source, pgn: p.pgn };
+      decks[keyOf(source)] = p.deck;
+    }
+    return { sources: result, decks };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [decks, setDecks] = useState<Record<string, PracticeData>>(prepared.decks);
+  // Latest decks, also right after a rating (state updates are asynchronous).
+  const decksRef = useRef(decks);
   const [mode, setMode] = useState<"due" | "all">("due");
-  const [queue, setQueue] = useState<string[]>([]);
-  const [currentFen, setCurrentFen] = useState<string | null>(null);
+  const [queue, setQueue] = useState<Item[]>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "waiting" });
   const [session, setSession] = useState({ correct: 0, incorrect: 0 });
   /** Ply shown while browsing the moves that led to the position (null = live). */
   const [viewPly, setViewPly] = useState<number | null>(null);
-  const [analysis, setAnalysis] = useState<{ moves: string[]; ply: number } | null>(null);
+  const [analysis, setAnalysis] = useState<{
+    moves: string[];
+    comments: string[];
+    ply: number;
+  } | null>(null);
 
   // Sync when leaving the screen.
   useEffect(() => () => void syncNow().catch(() => {}), []);
 
-  const save = (next: PracticeData) => {
-    setLocalDeck(next);
-    setDeck(rel, String(game), next);
-    scheduleSync(PRACTICE_SYNC_DELAY);
+  /** Due positions (and new ones) of every source, shuffled when mixing repertoires. */
+  const dueItems = (all: Record<string, PracticeData>): Item[] => {
+    const now = new Date();
+    const items: Item[] = [];
+    for (const [key, deck] of Object.entries(all)) {
+      for (const p of deck.positions)
+        if (new Date(p.card.due) <= now) items.push({ key, fen: p.fen });
+    }
+    return mixed ? shuffle(items) : items;
   };
 
-  const pickNext = (d: PracticeData, m: "due" | "all", q: string[]) => {
+  const advance = (all: Record<string, PracticeData>, m: "due" | "all", rest: Item[]) => {
     setPhase({ kind: "waiting" });
     setViewPly(null);
-    if (m === "all") {
-      setCurrentFen(q[0] ?? null);
-      setQueue(q);
-    } else {
-      setCurrentFen(getCardForReview(d.positions)?.fen ?? null);
-    }
+    // In review mode, positions answered "again" come back once they are due.
+    setQueue(rest.length > 0 || m === "all" ? rest : dueItems(all));
   };
 
   useEffect(() => {
-    if (deck) pickNext(deck, "due", []);
+    advance(decks, "due", []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!prepared || !deck) {
+  const keys = Object.keys(prepared.sources);
+  if (keys.length === 0) {
     return (
       <div className="screen">
-        <Header title={name} onBack={onBack} />
+        <Header title={title} onBack={onBack} />
         <p className="empty">Impossibile leggere questo repertorio.</p>
       </div>
     );
   }
 
-  const { pgn } = prepared;
-  const stats = getStats(deck.positions);
-  const index = currentFen ? deck.positions.findIndex((p) => p.fen === currentFen) : -1;
-  const position = index >= 0 ? deck.positions[index] : null;
+  const allPositions = Object.values(decks).flatMap((d) => d.positions);
+  const stats = getStats(allPositions);
+  const current = queue[0];
+  const currentSource = current ? prepared.sources[current.key] : prepared.sources[keys[0]];
+  const pgn = currentSource.pgn;
+  const deck = current ? decks[current.key] : undefined;
+  const index = current && deck ? deck.positions.findIndex((p) => p.fen === current.fen) : -1;
+  const position = deck && index >= 0 ? deck.positions[index] : null;
   const path = position ? findFen(position.fen, pgn.root) : [];
   const line = lineTo(pgn.root, path);
   const lastMove =
@@ -123,8 +193,18 @@ export function Practice({
       ? ([makeSquare(line.last.move.from), makeSquare(line.last.move.to)] as [string, string])
       : undefined;
 
-  function grade(g: 1 | 2 | 3 | 4) {
-    if (!deck || index < 0) return;
+  const save = (key: string, next: PracticeData) => {
+    const source = prepared.sources[key].source;
+    const all = { ...decksRef.current, [key]: next };
+    decksRef.current = all;
+    setDecks(all);
+    setDeck(source.rel, String(source.game), next);
+    scheduleSync(PRACTICE_SYNC_DELAY);
+    return all;
+  };
+
+  const rate = (g: 1 | 2 | 3 | 4) => {
+    if (!current || !deck || index < 0) return decks;
     let next = deck;
     updateCardPerformance(
       (action) => {
@@ -134,8 +214,12 @@ export function Practice({
       deck.positions[index].card,
       g,
     );
-    save(next);
-    pickNext(next, mode, queue);
+    return save(current.key, next);
+  };
+
+  function grade(g: 1 | 2 | 3 | 4) {
+    const all = rate(g);
+    advance(all, mode, queue.slice(1));
   }
 
   function onMove(raw: NormalMove) {
@@ -161,43 +245,30 @@ export function Practice({
     const san = makeSan(pos, move);
     if (san === position.answer) {
       setSession((s) => ({ ...s, correct: s.correct + 1 }));
+      setPhase({ kind: "correct", san, move });
       if (mode === "all") {
-        setPhase({ kind: "correct", san, move });
-        setTimeout(() => {
-          const q = queue.slice(1);
-          pickNext(deck!, "all", q);
-        }, 600);
-      } else {
-        setPhase({ kind: "correct", san, move });
+        const rest = queue.slice(1);
+        setTimeout(() => advance(decksRef.current, "all", rest), 600);
       }
     } else {
       setSession((s) => ({ ...s, incorrect: s.incorrect + 1 }));
-      if (mode === "due") {
-        // Same as the desktop app: a wrong move counts as "again".
-        let next = deck!;
-        updateCardPerformance(
-          (action) => {
-            next = typeof action === "function" ? action(structuredClone(deck!)) : action;
-          },
-          index,
-          position.card,
-          1,
-        );
-        save(next);
-      }
+      // Same as the desktop app: a wrong move counts as "again".
+      if (mode === "due") rate(1);
       setPhase({ kind: "incorrect", played: san, answer: answerMove ?? null });
     }
   }
 
   function startAll() {
-    const q = deck!.positions.map((p) => p.fen);
+    const items: Item[] = [];
+    for (const [key, d] of Object.entries(decks))
+      for (const p of d.positions) items.push({ key, fen: p.fen });
     setMode("all");
-    pickNext(deck!, "all", q);
+    advance(decks, "all", mixed ? shuffle(items) : items);
   }
 
   function startDue() {
     setMode("due");
-    pickNext(deck!, "due", []);
+    advance(decks, "due", []);
   }
 
   // Positions along the line from the start to the current card.
@@ -205,6 +276,9 @@ export function Practice({
   for (const i of path) nodes.push(nodes[nodes.length - 1].children[i]);
   const livePly = path.length;
   const browsing = position !== null && viewPly !== null && viewPly < livePly;
+  const answerNode = position
+    ? nodes[livePly].children.find((c) => c.san === position.answer)
+    : undefined;
   const revealed =
     phase.kind === "correct"
       ? phase.san
@@ -217,6 +291,7 @@ export function Practice({
       <Analysis
         startFen={pgn.root.fen}
         moves={analysis.moves}
+        comments={analysis.comments}
         initialPly={analysis.ply}
         orientation={pgn.orientation}
         onBack={() => setAnalysis(null)}
@@ -226,16 +301,22 @@ export function Practice({
 
   function openAnalysis() {
     const sans = nodes.slice(1).map((n) => n.san ?? "");
+    const comments = nodes.slice(1).map((n) => n.comment ?? "");
     if (browsing) {
-      setAnalysis({ moves: sans, ply: viewPly! });
-    } else {
-      const moves = revealed ? [...sans, revealed] : sans;
+      setAnalysis({ moves: sans, comments, ply: viewPly! });
+    } else if (revealed) {
       // After a correct answer the board already shows the move that was played.
-      setAnalysis({ moves, ply: phase.kind === "correct" ? sans.length + 1 : sans.length });
+      setAnalysis({
+        moves: [...sans, revealed],
+        comments: [...comments, answerNode?.comment ?? ""],
+        ply: phase.kind === "correct" ? sans.length + 1 : sans.length,
+      });
+    } else {
+      setAnalysis({ moves: sans, comments, ply: sans.length });
     }
   }
 
-  let boardFen = position?.fen ?? deck.positions[0]?.fen ?? pgn.root.fen;
+  let boardFen = position?.fen ?? pgn.root.fen;
   let shapes: DrawShape[] = [];
   let boardLastMove = lastMove;
   if (position && phase.kind === "correct") {
@@ -263,15 +344,22 @@ export function Practice({
     position && phase.kind === "correct" && mode === "due"
       ? getNextReviewTimes(position.card)
       : null;
+  const colorName = pgn.orientation === "white" ? "Bianco" : "Nero";
+  const lastNode = livePly > 0 ? nodes[livePly] : undefined;
 
   return (
     <div className="screen practice">
-      <Header title={name} onBack={onBack} />
+      <Header title={title} onBack={onBack} />
       <div className="stats-row">
         <span className="pill due">{stats.due} da ripassare</span>
         <span className="pill new">{stats.unseen} nuove</span>
         <span className="pill">{stats.total} totali</span>
       </div>
+      {mixed && position && (
+        <p className="source">
+          <span className={`color-dot ${pgn.orientation}`} /> {currentSource.source.name}
+        </p>
+      )}
       <Board
         fen={boardFen}
         orientation={pgn.orientation}
@@ -295,11 +383,11 @@ export function Practice({
                 <button
                   key={ply}
                   type="button"
-                  className={`move ${(viewPly ?? livePly) === ply ? "current" : ""}`}
+                  className={`move ${(viewPly ?? livePly) === ply ? "current" : ""} ${node.comment ? "has-note" : ""}`}
                   onClick={() => setViewPly(ply === livePly ? null : ply)}
                 >
                   <span className="num">{number}</span>
-                  {node.san}
+                  {withSymbols(node, node.san ?? "")}
                 </button>
               );
             })}
@@ -352,7 +440,7 @@ export function Practice({
               <p>Ripasso completo finito.</p>
             ) : (
               <p>
-                Niente da ripassare ora.
+                {mixed ? "Hai ripassato tutto per ora." : "Niente da ripassare ora."}
                 {stats.nextDue && (
                   <>
                     <br />
@@ -372,7 +460,7 @@ export function Practice({
                 </button>
               ) : (
                 <button type="button" onClick={startAll}>
-                  Ripassa tutto il repertorio
+                  {mixed ? "Ripassa tutti i repertori" : "Ripassa tutto il repertorio"}
                 </button>
               )}
             </div>
@@ -380,30 +468,37 @@ export function Practice({
         )}
 
         {browsing && (
-          <p className="hint">
-            Stai rivedendo le mosse che portano alla posizione. Tocca ⏭ per tornare all'allenamento.
-          </p>
+          <>
+            <p className="hint">
+              Stai rivedendo le mosse che portano alla posizione. Tocca ⏭ per tornare
+              all'allenamento.
+            </p>
+            <Notes
+              items={[
+                {
+                  label: withSymbols(nodes[viewPly!], nodes[viewPly!].san ?? "Inizio"),
+                  text: nodes[viewPly!].comment ?? "",
+                },
+              ]}
+            />
+          </>
         )}
 
         {position && phase.kind === "waiting" && !browsing && (
-          <p className="hint">
-            Gioca la mossa del tuo repertorio ({pgn.orientation === "white" ? "Bianco" : "Nero"}).
-          </p>
+          <p className="hint">Gioca la mossa del tuo repertorio ({colorName}).</p>
         )}
 
-        {position && phase.kind === "incorrect" && (
+        {position && phase.kind === "incorrect" && !browsing && (
           <div className="result wrong">
             <p>
               <strong>{phase.played}</strong> non è la mossa del repertorio. La mossa giusta è{" "}
-              <strong>{position.answer}</strong>.
+              <strong>{withSymbols(answerNode, position.answer)}</strong>.
             </p>
             <div className="buttons">
               <button
                 type="button"
                 className="primary"
-                onClick={() =>
-                  mode === "all" ? pickNext(deck, "all", queue.slice(1)) : pickNext(deck, "due", [])
-                }
+                onClick={() => advance(decksRef.current, mode, queue.slice(1))}
               >
                 Avanti
               </button>
@@ -411,10 +506,10 @@ export function Practice({
           </div>
         )}
 
-        {position && phase.kind === "correct" && reviewTimes && (
+        {position && phase.kind === "correct" && reviewTimes && !browsing && (
           <div className="result right">
             <p>
-              <strong>{phase.san}</strong> — giusto! Quanto è stato facile?
+              <strong>{withSymbols(answerNode, phase.san)}</strong> — giusto! Quanto è stato facile?
             </p>
             <div className="grades">
               {GRADES.map(({ grade: g, label, className }) => (
@@ -432,17 +527,33 @@ export function Practice({
           </div>
         )}
 
-        {position && phase.kind === "correct" && mode === "all" && (
+        {position && phase.kind === "correct" && mode === "all" && !browsing && (
           <div className="result right">
             <p>
-              <strong>{phase.san}</strong> — giusto!
+              <strong>{withSymbols(answerNode, phase.san)}</strong> — giusto!
             </p>
           </div>
         )}
 
+        {position && revealed && !browsing && (
+          <Notes
+            items={[
+              ...(lastNode
+                ? [
+                    {
+                      label: withSymbols(lastNode, lastNode.san ?? ""),
+                      text: lastNode.comment ?? "",
+                    },
+                  ]
+                : [{ label: "Inizio", text: pgn.root.comment ?? "" }]),
+              { label: withSymbols(answerNode, position.answer), text: answerNode?.comment ?? "" },
+            ]}
+          />
+        )}
+
         <p className="session">
           Sessione: {session.correct} giuste · {session.incorrect} sbagliate
-          {mode === "all" && position ? ` · ${queue.length} rimaste` : ""}
+          {position ? ` · ${queue.length} in coda` : ""}
         </p>
       </div>
     </div>

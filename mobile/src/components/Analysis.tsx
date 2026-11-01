@@ -8,6 +8,7 @@ import { positionFromFen } from "@/utils/chessops";
 import { useBackHandler } from "../back";
 import { type Analysis as EngineAnalysis, Engine, formatScore, pvToSan, whiteBar } from "../engine";
 import { Board } from "./Board";
+import { ExplorerPanel } from "./ExplorerPanel";
 import { Header } from "./Practice";
 
 type Ply = { san: string; uci: string; fen: string };
@@ -39,6 +40,7 @@ const ENGINE_DEPTH = 20;
 export function Analysis({
   startFen,
   moves,
+  comments = [],
   initialPly,
   orientation,
   onBack,
@@ -46,6 +48,8 @@ export function Analysis({
   startFen: string;
   /** SAN moves from `startFen` (the line of the repertoire). */
   moves: string[];
+  /** PGN comment of each move of `moves`, if any. */
+  comments?: string[];
   initialPly: number;
   orientation: "white" | "black";
   onBack: () => void;
@@ -55,6 +59,7 @@ export function Analysis({
   const [ply, setPly] = useState(() => Math.min(initialPly, moves.length));
   const [flipped, setFlipped] = useState(false);
   const [engineOn, setEngineOn] = useState(true);
+  const [tab, setTab] = useState<"engine" | "explorer">("engine");
   const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null);
   const engine = useRef<Engine | null>(null);
   const movesRef = useRef<HTMLDivElement>(null);
@@ -232,7 +237,52 @@ export function Analysis({
         })}
       </div>
 
-      {engineOn && (
+      {(() => {
+        // Comment of the repertoire move shown on the board (not of explored moves).
+        const i = ply - 1;
+        const fromRepertoire =
+          i >= 0 && i < moves.length && history.slice(0, ply).every((p, j) => p.san === moves[j]);
+        const note = fromRepertoire ? comments[i] : "";
+        return note ? (
+          <div className="notes analysis-note">
+            <p>
+              <span className="notes-label">{history[i].san}</span> {note}
+            </p>
+          </div>
+        ) : null;
+      })()}
+
+      <div className="tabs">
+        <button
+          type="button"
+          className={tab === "engine" ? "active" : ""}
+          onClick={() => setTab("engine")}
+        >
+          Motore
+        </button>
+        <button
+          type="button"
+          className={tab === "explorer" ? "active" : ""}
+          onClick={() => setTab("explorer")}
+        >
+          Esploratore
+        </button>
+      </div>
+
+      {tab === "explorer" && (
+        <ExplorerPanel
+          fen={fen}
+          onPlay={(uci) => {
+            const move = parseUci(uci) as NormalMove | undefined;
+            if (move) play(move);
+          }}
+        />
+      )}
+
+      {tab === "engine" && !engineOn && (
+        <p className="dim tab-note">Motore spento: riaccendilo in alto.</p>
+      )}
+      {tab === "engine" && engineOn && (
         <div className="lines">
           {lines.map((line) => {
             const sans = pvToSan(fen, line.pv, 10);
@@ -267,7 +317,7 @@ export function Analysis({
           {lines.length === 0 && !status && <p className="dim">Stockfish sta calcolando…</p>}
         </div>
       )}
-      <p className="engine-credit">Stockfish 19 lite</p>
+      {tab === "engine" && <p className="engine-credit">Stockfish 19 lite</p>}
     </div>
   );
 }

@@ -561,6 +561,8 @@
     "Repertoires.Summary_other": "{{count}} positions to practice today",
     "Repertoires.Synced": "Synced with GitHub",
     "Repertoires.Title": "Repertoires",
+    "Repertoires.TrainAll_one": "Train all ({{count}})",
+    "Repertoires.TrainAll_other": "Train all ({{count}})",
     "Repertoires.UpToDate": "Up to date",
     "RichText.Bold": "Bold",
     "RichText.BulletList": "Bullet list",
@@ -779,6 +781,23 @@
     "TimeControl.Classical": "Classical",
     "TimeControl.Correspondence": "Correspondence",
     "TimeControl.Rapid": "Rapid",
-    "TimeControl.UltraBullet": "UltraBullet"
+    "TimeControl.UltraBullet": "UltraBullet",
+    "TrainAll.Again": "Again",
+    "TrainAll.Close": "Close",
+    "TrainAll.Correct": "correct! How easy was it?",
+    "TrainAll.Done": "All done for now",
+    "TrainAll.Easy": "Easy",
+    "TrainAll.Good": "Good",
+    "TrainAll.Hard": "Hard",
+    "TrainAll.InQueue_one": "{{count}} in queue",
+    "TrainAll.InQueue_other": "{{count}} in queue",
+    "TrainAll.Loading": "Loading repertoires…",
+    "TrainAll.Next": "Next (Enter)",
+    "TrainAll.NextReview": "Next review: {{date}}",
+    "TrainAll.Prompt": "Play your repertoire move ({{color}}).",
+    "TrainAll.SessionResult": "Session: {{correct}} correct · {{incorrect}} wrong",
+    "TrainAll.StartPosition": "Starting position",
+    "TrainAll.Title": "Train all repertoires",
+    "TrainAll.Wrong": "{{played}} is not the repertoire move. The right move is"
   }
 }
