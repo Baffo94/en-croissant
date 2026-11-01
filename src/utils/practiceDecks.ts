@@ -61,3 +61,35 @@ export function moveDecks(from: string, to: string): number {
     }
     return moved;
 }
+
+/** All practice decks of a PGN file, keyed by game index. */
+export function decksOfFile(path: string): Record<number, PracticeData> {
+    const target = normalizePath(path);
+    const decks: Record<number, PracticeData> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const parsed = key ? parseDeckKey(key) : null;
+        if (!key || !parsed || normalizePath(parsed.file) !== target) continue;
+        const deck = readDeck(key);
+        if (deck && (!decks[parsed.game] || deck.logs.length > decks[parsed.game].logs.length)) {
+            decks[parsed.game] = deck;
+        }
+    }
+    return decks;
+}
+
+/** Deletes the practice decks of a PGN file (e.g. when the file is deleted). */
+export function removeDecks(path: string): void {
+    const target = normalizePath(path);
+    const store = getDefaultStore();
+    const keys: { key: string; file: string; game: number }[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const parsed = key ? parseDeckKey(key) : null;
+        if (key && parsed && normalizePath(parsed.file) === target) keys.push({ key, ...parsed });
+    }
+    for (const { key, file, game } of keys) {
+        store.set(deckAtomFamily({ file, game }), emptyDeck());
+        localStorage.removeItem(key);
+    }
+}

@@ -12,15 +12,21 @@ import { createTab } from "@/utils/tabs";
 export default function CreateRepertoireModal({
   opened,
   setOpened,
+  dir,
+  onCreated,
 }: {
   opened: boolean;
   setOpened: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Folder for the new file (defaults to the documents folder). */
+  dir?: string;
+  onCreated?: () => void;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [color, setColor] = useState<"white" | "black">("white");
   const [error, setError] = useState("");
-  const { documentDir } = useLoaderData({ from: "/" });
+  const loaderData = useLoaderData({ strict: false }) as { documentDir?: string } | undefined;
+  const documentDir = dir ?? loaderData?.documentDir ?? "";
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
@@ -74,6 +80,7 @@ export default function CreateRepertoireModal({
     });
 
     store.set(tabFamily(id), "practice");
+    onCreated?.();
     store.set(addRecentFileAtom, {
       name: trimmedName,
       path: fileInfo.path,

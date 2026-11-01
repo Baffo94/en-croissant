@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { getState, updateState } from "../state";
+import { applyPieceSet, BOARDS, PIECE_SETS } from "../boardThemes";
+import { getState, updateState, useAppState } from "../state";
+import { Board } from "./Board";
 import { createClient, isConfigured, parseRepository, syncNow } from "../sync";
 import { Header } from "./Practice";
 
@@ -98,6 +100,52 @@ export function Settings({ onBack, onSaved }: { onBack?: () => void; onSaved: ()
           {busy ? "Connessione…" : "Salva e sincronizza"}
         </button>
         {message && <p className={message.kind === "error" ? "error" : "ok"}>{message.text}</p>}
+      </div>
+      <Appearance />
+    </div>
+  );
+}
+
+const PREVIEW_FEN = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
+
+function Appearance() {
+  const appearance = useAppState((s) => s.appearance);
+  const set = (patch: Partial<typeof appearance>) => {
+    updateState((s) => ({ ...s, appearance: { ...s.appearance, ...patch } }));
+    if (patch.pieces) applyPieceSet(patch.pieces);
+  };
+  return (
+    <div className="form appearance">
+      <h2>Aspetto della scacchiera</h2>
+      <div className="preview">
+        <Board fen={PREVIEW_FEN} orientation="white" lastMove={["d1", "h5"]} interactive={false} />
+      </div>
+      <span className="label">Scacchiera</span>
+      <div className="tiles">
+        {BOARDS.map((b) => (
+          <button
+            key={b.file}
+            type="button"
+            className={`tile ${appearance.board === b.file ? "selected" : ""}`}
+            onClick={() => set({ board: b.file })}
+          >
+            <span className="tile-image" style={{ backgroundImage: `url('./board/${b.file}')` }} />
+            <span className="tile-name">{b.name}</span>
+          </button>
+        ))}
+      </div>
+      <span className="label">Pezzi</span>
+      <div className="chips">
+        {PIECE_SETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`chip ${appearance.pieces === p.id ? "selected" : ""}`}
+            onClick={() => set({ pieces: p.id })}
+          >
+            {p.name}
+          </button>
+        ))}
       </div>
     </div>
   );

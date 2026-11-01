@@ -1,6 +1,5 @@
 import "@lichess-org/chessground/assets/chessground.base.css";
-import "@lichess-org/chessground/assets/chessground.brown.css";
-import "@lichess-org/chessground/assets/chessground.cburnett.css";
+import "../board.css";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
@@ -11,6 +10,8 @@ import { chessgroundDests } from "chessops/compat";
 import { parseFen } from "chessops/fen";
 import { useEffect, useRef } from "react";
 import { positionFromFen } from "@/utils/chessops";
+import { boardTheme } from "../boardThemes";
+import { useAppState } from "../state";
 
 export type BoardProps = {
   fen: string;
@@ -23,6 +24,7 @@ export type BoardProps = {
 };
 
 export function Board({ fen, orientation, lastMove, shapes, interactive, onMove }: BoardProps) {
+  const theme = boardTheme(useAppState((s) => s.appearance.board));
   const el = useRef<HTMLDivElement>(null);
   const api = useRef<Api | null>(null);
   const onMoveRef = useRef(onMove);
@@ -64,7 +66,23 @@ export function Board({ fen, orientation, lastMove, shapes, interactive, onMove 
     api.current?.setAutoShapes(shapes ?? []);
   }, [fen, orientation, lastMove, shapes, interactive]);
 
-  return <div className="board" ref={el} />;
+  // Chessground takes over its element, so the theme variables live on a wrapper.
+  return (
+    <div
+      className="board"
+      style={
+        {
+          // Absolute URL: a relative url() inside a CSS variable would resolve against
+          // the bundled stylesheet's folder instead of the page.
+          "--board-image": `url('${new URL(`board/${theme.file}`, document.baseURI).href}')`,
+          "--coord-white": theme.coords.white,
+          "--coord-black": theme.coords.black,
+        } as React.CSSProperties
+      }
+    >
+      <div className="board-inner" ref={el} />
+    </div>
+  );
 }
 
 export function squareName(sq: number): string {

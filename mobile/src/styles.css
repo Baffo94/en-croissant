@@ -232,6 +232,11 @@ button.icon {
   margin: 0 auto;
 }
 
+.board-inner {
+  width: 100%;
+  height: 100%;
+}
+
 .board .cg-wrap {
   width: 100%;
   height: 100%;
@@ -359,4 +364,65 @@ button.icon {
 
 .ok {
   color: var(--green);
+}
+
+/* Appearance settings */
+
+.appearance h2 {
+  font-size: 16px;
+  margin: 8px 0 0;
+}
+
+.appearance .preview {
+  width: 70%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.appearance .preview .board {
+  width: 100%;
+}
+
+.label {
+  font-size: 14px;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.tile-image {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background-size: 400%;
+  background-position: top left;
+}
+
+.tile.selected,
+.chip.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 8px 12px;
+  font-size: 14px;
 }

@@ -5,6 +5,7 @@ import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
 import type { SyncManifest } from "@/utils/sync/engine";
+import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
 
 export type Config = {
     token: string;
@@ -21,6 +22,7 @@ export type AppState = {
     /** relPgn -> game index -> deck */
     decks: Record<string, Record<string, PracticeData>>;
     manifest: SyncManifest | null;
+    appearance: { board: string; pieces: string };
 };
 
 const FILE = "state.json";
@@ -33,6 +35,7 @@ function initialState(): AppState {
         files: {},
         decks: {},
         manifest: null,
+        appearance: { board: DEFAULT_BOARD, pieces: DEFAULT_PIECES },
     };
 }
 
@@ -54,6 +57,7 @@ export async function loadState(): Promise<void> {
             ...initialState(),
             ...parsed,
             config: { ...initialState().config, ...parsed.config },
+            appearance: { ...initialState().appearance, ...parsed.appearance },
         };
     } catch {
         state = initialState();
