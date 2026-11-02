@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import type { PracticeData } from "@/state/atoms";
 import {
+    type PauseState,
+    parseProgressFile,
     conflictCopyPath,
     gitBlobSha,
     mergeDecks,
@@ -255,6 +257,13 @@ class FakeClient {
 class MemoryEnv implements SyncEnv {
     files = new Map<string, Uint8Array>();
     decks = new Map<string, Record<string, PracticeData>>();
+    pauses = new Map<string, PauseState>();
+    getPause(rel: string) {
+        return this.pauses.get(rel) ?? null;
+    }
+    setPause(rel: string, state: PauseState) {
+        this.pauses.set(rel, state);
+    }
     async listLocalFiles() {
         return [...this.files.keys()];
     }
@@ -282,6 +291,11 @@ class MemoryEnv implements SyncEnv {
         }
         this.decks.set(to, target);
         this.decks.delete(from);
+        const pause = this.pauses.get(from);
+        if (pause) {
+            this.pauses.set(to, pause);
+            this.pauses.delete(from);
+        }
     }
     put(rel: string, text: string) {
         this.files.set(rel, enc.encode(text));
@@ -530,6 +544,65 @@ describe("renames", () => {
         expect(second.summary.renamed).toBe(2);
         const fens = ["C", "D"].map((n) => pc.getDecks(`${n}.pgn`)["0"].positions[0].fen).sort();
         expect(fens).toEqual(["A", "B"]);
+    });
+});
+
+describe("pause", () => {
+    test("a pause set on the phone reaches the PC, the latest change wins", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("Scotch.pgn", "1. e4 e5 2. Nf3 Nc6 3. d4 *");
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+
+        const phone = new MemoryEnv();
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("phone"), {
+            readOnlyContent: true,
+        });
+        // Paused on the phone, even though the repertoire was never practiced.
+        phone.setPause("Scotch.pgn", { paused: true, changedAt: "2026-11-02T10:00:00Z" });
+        const phoneSecond = await runSync(phone, client(repo), phoneFirst.manifest, {
+            readOnlyContent: true,
+        });
+        expect(parseProgressFile(repo.text("progress/Scotch.json")!).pause?.paused).toBe(true);
+
+        const pcSecond = await runSync(pc, client(repo), pcFirst.manifest);
+        expect(pc.getPause("Scotch.pgn")?.paused).toBe(true);
+
+        // Resumed on the PC later: the phone follows.
+        pc.setPause("Scotch.pgn", { paused: false, changedAt: "2026-11-05T10:00:00Z" });
+        await runSync(pc, client(repo), pcSecond.manifest);
+        await runSync(phone, client(repo), phoneSecond.manifest, { readOnlyContent: true });
+        expect(phone.getPause("Scotch.pgn")?.paused).toBe(false);
+    });
+
+    test("an older remote change does not override a newer local one", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("Scotch.pgn", "1. e4 *");
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        await repo.commitFiles({
+            "progress/Scotch.json": serializeProgress(
+                {},
+                { paused: true, changedAt: "2026-11-01T00:00:00Z" },
+            ),
+        });
+        pc.setPause("Scotch.pgn", { paused: false, changedAt: "2026-11-02T00:00:00Z" });
+        await runSync(pc, client(repo), first.manifest);
+        expect(pc.getPause("Scotch.pgn")?.paused).toBe(false);
+        expect(parseProgressFile(repo.text("progress/Scotch.json")!).pause?.paused).toBe(false);
+    });
+
+    test("the pause follows a renamed repertoire", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("Scotch.pgn", "1. e4 *");
+        pc.setPause("Scotch.pgn", { paused: true, changedAt: "2026-11-02T00:00:00Z" });
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        pc.files.set("Scozzese.pgn", pc.files.get("Scotch.pgn")!);
+        pc.files.delete("Scotch.pgn");
+        await runSync(pc, client(repo), first.manifest);
+        expect(pc.getPause("Scozzese.pgn")?.paused).toBe(true);
+        expect(parseProgressFile(repo.text("progress/Scozzese.json")!).pause?.paused).toBe(true);
     });
 });
 

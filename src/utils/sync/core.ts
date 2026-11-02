@@ -17,7 +17,27 @@ export type ProgressFile = {
     version: number;
     /** Key: game index inside the PGN file ("0", "1", ...). */
     games: Record<string, PracticeData>;
+    /** Whether the repertoire is paused (left out of reviews); absent = never paused. */
+    pause?: PauseState;
 };
+
+/** Pause state of a repertoire, synced between devices: the latest change wins. */
+export type PauseState = {
+    paused: boolean;
+    /** ISO date of the last change. */
+    changedAt: string;
+};
+
+/** The most recent of two pause states (either may be missing). */
+export function newerPause(a: PauseState | null, b: PauseState | null): PauseState | null {
+    if (!a) return b;
+    if (!b) return a;
+    return new Date(b.changedAt).getTime() > new Date(a.changedAt).getTime() ? b : a;
+}
+
+export function isPaused(state: PauseState | null | undefined): boolean {
+    return state?.paused === true;
+}
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -246,16 +266,30 @@ export function isEmptyDeck(deck: PracticeData): boolean {
 }
 
 /** Stable JSON so that identical progress always produces the same blob sha. */
-export function serializeProgress(games: Record<string, PracticeData>): string {
+export function serializeProgress(
+    games: Record<string, PracticeData>,
+    pause: PauseState | null = null,
+): string {
     const sorted: Record<string, PracticeData> = {};
     for (const key of Object.keys(games).sort((a, b) => Number(a) - Number(b))) {
         sorted[key] = games[key];
     }
-    const file: ProgressFile = { version: PROGRESS_VERSION, games: sorted };
+    const file: ProgressFile = {
+        version: PROGRESS_VERSION,
+        games: sorted,
+        ...(pause ? { pause } : {}),
+    };
     return `${JSON.stringify(file, null, 2)}\n`;
 }
 
 export function parseProgress(text: string): Record<string, PracticeData> {
+    return parseProgressFile(text).games;
+}
+
+export function parseProgressFile(text: string): {
+    games: Record<string, PracticeData>;
+    pause: PauseState | null;
+} {
     const parsed = JSON.parse(text) as Partial<ProgressFile>;
     if (
         !parsed ||
@@ -272,7 +306,13 @@ export function parseProgress(text: string): Record<string, PracticeData> {
             logs: Array.isArray(deck?.logs) ? deck.logs : [],
         };
     }
-    return games;
+    const pause =
+        parsed.pause &&
+        typeof parsed.pause.paused === "boolean" &&
+        typeof parsed.pause.changedAt === "string"
+            ? parsed.pause
+            : null;
+    return { games, pause };
 }
 
 // ---------------------------------------------------------------------------

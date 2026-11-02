@@ -2,10 +2,79 @@
 // When a PGN (or a whole folder) is renamed or moved its decks must follow it,
 // otherwise the practice progress of that repertoire is silently lost.
 
-import { getDefaultStore } from "jotai";
+import { getDefaultStore, useAtomValue } from "jotai";
+import { atomFamily, atomWithStorage } from "jotai/utils";
 import type { PracticeData } from "@/components/files/opening";
 import { deckAtomFamily } from "@/state/atoms";
-import { emptyDeck, mergeDecks, normalizePath, parseDeckKey } from "@/utils/sync/core";
+import {
+    emptyDeck,
+    isPaused,
+    mergeDecks,
+    normalizePath,
+    parseDeckKey,
+    type PauseState,
+} from "@/utils/sync/core";
+
+// ---------------------------------------------------------------------------
+// Paused repertoires: "repertoire-pause-<normalised path>" -> PauseState
+// ---------------------------------------------------------------------------
+
+const PAUSE_PREFIX = "repertoire-pause-";
+
+const pauseAtomFamily = atomFamily((normalizedPath: string) =>
+    atomWithStorage<PauseState | null>(`${PAUSE_PREFIX}${normalizedPath}`, null, undefined, {
+        getOnInit: true,
+    }),
+);
+
+export function getPause(path: string): PauseState | null {
+    return getDefaultStore().get(pauseAtomFamily(normalizePath(path)));
+}
+
+export function setPauseState(path: string, state: PauseState | null): void {
+    const atom = pauseAtomFamily(normalizePath(path));
+    if (state) getDefaultStore().set(atom, state);
+    else {
+        getDefaultStore().set(atom, null);
+        localStorage.removeItem(`${PAUSE_PREFIX}${normalizePath(path)}`);
+    }
+}
+
+/** Pauses or resumes a repertoire (the review schedule is left as it is). */
+export function setPaused(path: string, paused: boolean): void {
+    setPauseState(path, { paused, changedAt: new Date().toISOString() });
+}
+
+export function isRepertoirePaused(path: string): boolean {
+    return isPaused(getPause(path));
+}
+
+/** Reactive version of isRepertoirePaused, for components. */
+export function usePaused(path: string): boolean {
+    return isPaused(useAtomValue(pauseAtomFamily(normalizePath(path))));
+}
+
+/** Moves pause states of a renamed file or folder. */
+function movePauses(from: string, to: string) {
+    const source = normalizePath(from);
+    const dest = normalizePath(to);
+    const moves: [string, string][] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith(PAUSE_PREFIX)) continue;
+        const file = key.slice(PAUSE_PREFIX.length);
+        if (file === source) moves.push([file, dest]);
+        else if (file.startsWith(`${source}/`))
+            moves.push([file, `${dest}${file.slice(source.length)}`]);
+    }
+    const store = getDefaultStore();
+    for (const [oldFile, newFile] of moves) {
+        const state = store.get(pauseAtomFamily(oldFile));
+        store.set(pauseAtomFamily(newFile), state);
+        store.set(pauseAtomFamily(oldFile), null);
+        localStorage.removeItem(`${PAUSE_PREFIX}${oldFile}`);
+    }
+}
 
 function readDeck(key: string): PracticeData | null {
     try {
@@ -24,6 +93,7 @@ function readDeck(key: string): PracticeData | null {
  * Returns the number of decks moved.
  */
 export function moveDecks(from: string, to: string): number {
+    movePauses(from, to);
     const source = normalizePath(from);
     const sep = to.includes("\\") ? "\\" : "/";
     const destRoot = to.replace(/[\\/]+$/, "");
@@ -80,6 +150,7 @@ export function decksOfFile(path: string): Record<number, PracticeData> {
 
 /** Deletes the practice decks of a PGN file (e.g. when the file is deleted). */
 export function removeDecks(path: string): void {
+    setPauseState(path, null);
     const target = normalizePath(path);
     const store = getDefaultStore();
     const keys: { key: string; file: string; game: number }[] = [];

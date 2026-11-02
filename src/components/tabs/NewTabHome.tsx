@@ -42,6 +42,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { getStats } from "@/components/files/opening";
+import { usePaused } from "@/utils/practiceDecks";
 import Chessboard from "../icons/Chessboard";
 import { FileIcon } from "@/components/files/FileIcon";
 
@@ -56,8 +57,9 @@ function RecentFileDuePositions({ file }: { file: string }) {
   );
 
   const stats = getStats(deck.positions);
+  const paused = usePaused(file);
 
-  if (stats.due + stats.unseen === 0) return null;
+  if (paused || stats.due + stats.unseen === 0) return null;
 
   return (
     <Badge size="sm" variant="light" color="orange" leftSection={<IconTarget size="0.75rem" />}>

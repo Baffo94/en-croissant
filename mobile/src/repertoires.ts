@@ -10,9 +10,11 @@ export type RepertoireEntry = {
     folder: string;
     orientation: "white" | "black";
     stats: ReturnType<typeof getStats>;
+    /** Left out of reviews and "Allena tutto". */
+    paused: boolean;
 };
 
-type Content = Pick<AppState, "files" | "decks">;
+type Content = Pick<AppState, "files" | "decks" | "pauses">;
 
 const parseCache = new Map<string, PgnGame[]>();
 
@@ -76,6 +78,7 @@ export function listRepertoires(state: Content): RepertoireEntry[] {
                 folder,
                 orientation: g.orientation,
                 stats: getStats(positions),
+                paused: state.pauses?.[rel]?.paused === true,
             });
         });
     }

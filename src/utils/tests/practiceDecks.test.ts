@@ -41,3 +41,17 @@ test("merges into a deck already at the destination", () => {
     expect(merged.logs).toHaveLength(2);
     expect(merged.positions[0].card.reps).toBe(2);
 });
+
+test("pause state: set, follows renames and folder moves, removed with the decks", async () => {
+    const { getPause, isRepertoirePaused, setPaused, removeDecks } =
+        await import("../practiceDecks");
+    setPaused("C:\\Rep\\Old\\Scotch.pgn", true);
+    expect(isRepertoirePaused("c:/rep/old/scotch.pgn")).toBe(true);
+    moveDecks("C:\\Rep\\Old\\Scotch.pgn", "C:\\Rep\\Old\\Scozzese.pgn");
+    expect(isRepertoirePaused("C:\\Rep\\Old\\Scotch.pgn")).toBe(false);
+    expect(isRepertoirePaused("C:\\Rep\\Old\\Scozzese.pgn")).toBe(true);
+    moveDecks("C:\\Rep\\Old", "C:\\Rep\\New");
+    expect(isRepertoirePaused("C:\\Rep\\New\\Scozzese.pgn")).toBe(true);
+    removeDecks("C:\\Rep\\New\\Scozzese.pgn");
+    expect(getPause("C:\\Rep\\New\\Scozzese.pgn")).toBeNull();
+});

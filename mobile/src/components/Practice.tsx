@@ -16,7 +16,7 @@ import type { PgnGame } from "@/utils/pgnTree";
 import type { TreeNode } from "@/utils/treeReducer";
 import { findFen } from "@/utils/treeReducer";
 import { prepareDeck } from "../repertoires";
-import { setDeck } from "../state";
+import { setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
 import { Board } from "./Board";
@@ -34,6 +34,7 @@ const GRADES: { grade: 1 | 2 | 3 | 4; label: string; className: string }[] = [
 ];
 
 const PRACTICE_SYNC_DELAY = 15_000;
+const PAUSE_SYNC_DELAY = 3_000;
 
 /** Moves (SAN) from the root to the node at `path`, as "1. e4 c5 2. Nf3". */
 function lineTo(root: TreeNode, path: number[]): { text: string; last: TreeNode | null } {
@@ -168,6 +169,8 @@ export function Practice({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const singleRel = sources.length === 1 ? sources[0].rel : null;
+  const paused = useAppState((s) => (singleRel ? s.pauses?.[singleRel]?.paused === true : false));
   const keys = Object.keys(prepared.sources);
   if (keys.length === 0) {
     return (
@@ -349,7 +352,29 @@ export function Practice({
 
   return (
     <div className="screen practice">
-      <Header title={title} onBack={onBack} />
+      <Header
+        title={title}
+        onBack={onBack}
+        right={
+          !mixed && singleRel ? (
+            <button
+              type="button"
+              className="pause-toggle"
+              onClick={() => {
+                setRepertoirePaused(singleRel, !paused);
+                scheduleSync(PAUSE_SYNC_DELAY);
+              }}
+            >
+              {paused ? "▶ Riattiva" : "⏸ Pausa"}
+            </button>
+          ) : undefined
+        }
+      />
+      {!mixed && paused && (
+        <div className="paused-banner">
+          <span>In pausa: escluso dai ripassi e da Allena tutto. Puoi comunque allenarlo qui.</span>
+        </div>
+      )}
       <div className="stats-row">
         <span className="pill due">{stats.due} da ripassare</span>
         <span className="pill new">{stats.unseen} nuove</span>

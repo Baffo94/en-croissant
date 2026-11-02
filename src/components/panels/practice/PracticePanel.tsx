@@ -24,6 +24,8 @@ import {
   IconCheck,
   IconFlame,
   IconInfoCircle,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconTarget,
   IconX,
 } from "@tabler/icons-react";
@@ -64,6 +66,7 @@ import { notifications } from "@mantine/notifications";
 import { commands } from "@/bindings";
 import { parsePGN } from "@/utils/chess";
 import { scheduleSync } from "@/utils/sync";
+import { setPaused, usePaused } from "@/utils/practiceDecks";
 import { currentDecks, dueItems, type MixedFile } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
@@ -86,6 +89,7 @@ function PracticePanel() {
   const [currentTab, setCurrentTab] = useAtom(currentTabAtom);
   const tabFile = getTabFile(currentTab);
   const setTreeState = useStore(store, (s) => s.setState);
+  const paused = usePaused(tabFile?.path ?? "");
   /** True while a "Train all" session loads the next repertoire into this tab. */
   const switchingRef = useRef(false);
   const [resetModal, toggleResetModal] = useToggle();
@@ -461,6 +465,24 @@ function PracticePanel() {
                   <Text fz="sm">{t("Board.Practice.NoPositionForTrain1")}</Text>
                   <Button variant="light" size="xs" onClick={() => setTab("build")}>
                     {t("Board.Practice.GoToBuild")}
+                  </Button>
+                </Stack>
+              </Alert>
+            )}
+            {paused && tabFile && (
+              <Alert color="gray" icon={<IconPlayerPause />} title={t("Repertoires.Paused")}>
+                <Stack gap="xs">
+                  <Text fz="sm">{t("Board.Practice.PausedDescription")}</Text>
+                  <Button
+                    variant="light"
+                    size="xs"
+                    leftSection={<IconPlayerPlay size={14} />}
+                    onClick={() => {
+                      setPaused(tabFile.path, false);
+                      scheduleSync(PRACTICE_SYNC_DELAY, tabFile.path);
+                    }}
+                  >
+                    {t("Repertoires.Resume")}
                   </Button>
                 </Stack>
               </Alert>

@@ -28,9 +28,12 @@ export function Home({
 }) {
   const files = useAppState((s) => s.files);
   const decks = useAppState((s) => s.decks);
+  const pauses = useAppState((s) => s.pauses);
   const lastSync = useAppState((s) => s.manifest?.lastSync ?? null);
   const status = useSyncStatus();
-  const entries = useMemo(() => listRepertoires({ files, decks }), [files, decks]);
+  const all = useMemo(() => listRepertoires({ files, decks, pauses }), [files, decks, pauses]);
+  const entries = all.filter((e) => !e.paused);
+  const pausedEntries = all.filter((e) => e.paused);
 
   const totals = entries.reduce(
     (t, e) => ({
@@ -64,7 +67,7 @@ export function Home({
         }
       />
       <SyncIndicator />
-      {entries.length === 0 ? (
+      {all.length === 0 ? (
         <div className="empty">
           <p>Nessun repertorio.</p>
           <p className="small">
@@ -107,6 +110,28 @@ export function Home({
             Totale: <span className="pill due">{totals.due}</span> da ripassare ·{" "}
             <span className="pill new">{totals.unseen}</span> nuove · {totals.positions} posizioni
           </p>
+          {pausedEntries.length > 0 && (
+            <>
+              <h2 className="section-title">In pausa</h2>
+              <ul className="list paused">
+                {pausedEntries.map((e) => (
+                  <li key={`${e.rel}#${e.game}`}>
+                    <button type="button" className="item" onClick={() => onOpen(e)}>
+                      <span className={`color-dot ${e.orientation}`} />
+                      <span className="item-main">
+                        <span className="item-name">{e.name}</span>
+                        {e.folder && <span className="item-folder">{e.folder}</span>}
+                      </span>
+                      <span className="item-stats">
+                        <span className="pill">⏸</span>
+                        <span className="item-total">{e.stats.total}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       )}
       {lastSync && (

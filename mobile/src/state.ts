@@ -4,6 +4,7 @@
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
+import type { PauseState } from "@/utils/sync/core";
 import type { SyncManifest } from "@/utils/sync/engine";
 import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
 import { DEFAULT_EXPLORER, type ExplorerSettings } from "./explorer";
@@ -25,6 +26,8 @@ export type AppState = {
     manifest: SyncManifest | null;
     appearance: { board: string; pieces: string };
     explorer: ExplorerSettings;
+    /** relPgn -> pause state (synced through the progress files). */
+    pauses: Record<string, PauseState>;
 };
 
 const FILE = "state.json";
@@ -39,6 +42,7 @@ function initialState(): AppState {
         manifest: null,
         appearance: { board: DEFAULT_BOARD, pieces: DEFAULT_PIECES },
         explorer: DEFAULT_EXPLORER,
+        pauses: {},
     };
 }
 
@@ -62,6 +66,7 @@ export async function loadState(): Promise<void> {
             config: { ...initialState().config, ...parsed.config },
             appearance: { ...initialState().appearance, ...parsed.appearance },
             explorer: { ...initialState().explorer, ...parsed.explorer },
+            pauses: parsed.pauses ?? {},
         };
     } catch {
         state = initialState();
@@ -162,4 +167,16 @@ export function decodeBase64(b64: string): Uint8Array {
 export function fileText(rel: string): string | null {
     const b64 = state.files[rel];
     return b64 === undefined ? null : new TextDecoder().decode(decodeBase64(b64));
+}
+
+export function isRepertoirePaused(state: Pick<AppState, "pauses">, rel: string): boolean {
+    return state.pauses?.[rel]?.paused === true;
+}
+
+/** Pauses or resumes a repertoire (the review schedule is left as it is). */
+export function setRepertoirePaused(rel: string, paused: boolean) {
+    updateState((s) => ({
+        ...s,
+        pauses: { ...s.pauses, [rel]: { paused, changedAt: new Date().toISOString() } },
+    }));
 }

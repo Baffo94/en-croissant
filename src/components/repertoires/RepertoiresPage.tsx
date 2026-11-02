@@ -26,6 +26,8 @@ import {
   IconDots,
   IconFolderOpen,
   IconPencil,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconPlus,
   IconSearch,
   IconTarget,
@@ -61,10 +63,17 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
-import { decksOfFile, removeDecks } from "@/utils/practiceDecks";
+import {
+  decksOfFile,
+  isRepertoirePaused,
+  removeDecks,
+  setPaused,
+  usePaused,
+} from "@/utils/practiceDecks";
 import {
   isConfigured,
   resolveSyncFolder,
+  scheduleSync,
   syncConfigAtom,
   syncNow,
   syncStatusAtom,
@@ -75,6 +84,9 @@ import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 
 dayjs.extend(relativeTime);
+
+/** Sync shortly after pausing/resuming, so the phone sees it. */
+const PAUSE_SYNC_DELAY = 5_000;
 
 type RepertoireFile = FileMetadata & { inSyncFolder: boolean; folder: string };
 
@@ -168,9 +180,11 @@ function RepertoireCard({
   onRename,
   onDelete,
   onToDo,
+  onPauseChange,
 }: {
   file: RepertoireFile;
   onToDo: (path: string, count: number) => void;
+  onPauseChange: () => void;
   onOpen: (file: RepertoireFile, practice: boolean) => void;
   onRename: (file: RepertoireFile) => void;
   onDelete: (file: RepertoireFile) => void;
@@ -184,13 +198,14 @@ function RepertoireCard({
   useAtomValue(deckAtomFamily({ file: file.path, game: 0 }));
   const { data: info } = useRepertoireInfo(file);
   const stats = cardStats(decksOfFile(file.path), info?.positions ?? 0);
-  const toDo = stats.due + stats.unseen;
+  const paused = usePaused(file.path);
+  const toDo = paused ? 0 : stats.due + stats.unseen;
   const pct = (n: number) => (stats.total > 0 ? (n / stats.total) * 100 : 0);
   const mastery = Math.round(pct(stats.learned));
   useEffect(() => onToDo(file.path, toDo), [file.path, toDo, onToDo]);
 
   return (
-    <Card withBorder radius="md" padding="md">
+    <Card withBorder radius="md" padding="md" style={paused ? { opacity: 0.6 } : undefined}>
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
           <Box
@@ -229,6 +244,19 @@ function RepertoireCard({
             <Menu.Dropdown>
               <Menu.Item leftSection={<IconBook size="1rem" />} onClick={() => onOpen(file, false)}>
                 {t("Repertoires.Open")}
+              </Menu.Item>
+              <Menu.Item
+                leftSection={
+                  paused ? <IconPlayerPlay size="1rem" /> : <IconPlayerPause size="1rem" />
+                }
+                onClick={() => {
+                  setPaused(file.path, !paused);
+                  // Let the other devices know (sync folder only).
+                  scheduleSync(PAUSE_SYNC_DELAY, file.path);
+                  onPauseChange();
+                }}
+              >
+                {paused ? t("Repertoires.Resume") : t("Repertoires.Pause")}
               </Menu.Item>
               <Menu.Item leftSection={<IconPencil size="1rem" />} onClick={() => onRename(file)}>
                 {t("Repertoires.Rename")}
@@ -284,17 +312,22 @@ function RepertoireCard({
         />
         <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
           <Group gap={6}>
-            {stats.due > 0 && (
+            {paused && (
+              <Badge color="gray" variant="filled" leftSection={<IconPlayerPause size="0.7rem" />}>
+                {t("Repertoires.Paused")}
+              </Badge>
+            )}
+            {!paused && stats.due > 0 && (
               <Badge color="orange" variant="light">
                 {t("Repertoires.Due", { count: stats.due })}
               </Badge>
             )}
-            {stats.unseen > 0 && (
+            {!paused && stats.unseen > 0 && (
               <Badge color="blue" variant="light">
                 {t("Repertoires.NewPositions", { count: stats.unseen })}
               </Badge>
             )}
-            {toDo === 0 && stats.total > 0 && (
+            {!paused && toDo === 0 && stats.total > 0 && (
               <Badge color="teal" variant="light">
                 {t("Repertoires.UpToDate")}
               </Badge>
@@ -308,7 +341,7 @@ function RepertoireCard({
               ? t("Repertoires.LastPractice", { when: fromNow(stats.lastReview) })
               : t("Repertoires.NeverPracticed")}
           </Text>
-          {toDo === 0 && stats.nextDue && (
+          {!paused && toDo === 0 && stats.nextDue && (
             <Text size="xs" c="dimmed">
               {t("Repertoires.NextReview", { when: fromNow(stats.nextDue) })}
             </Text>
@@ -349,6 +382,8 @@ export default function RepertoiresPage() {
   const [renaming, setRenaming] = useState<RepertoireFile | null>(null);
   const [deleting, setDeleting] = useState<RepertoireFile | null>(null);
   const [startingTrainAll, setStartingTrainAll] = useState(false);
+  // Bumped when a repertoire is paused/resumed, to re-sort the list.
+  const [pauseVersion, setPauseVersion] = useState(0);
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
@@ -388,14 +423,19 @@ export default function RepertoiresPage() {
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (files ?? []).filter(
+    const list = (files ?? []).filter(
       (f) =>
         (!query ||
           f.name.toLowerCase().includes(query) ||
           f.folder.toLowerCase().includes(query)) &&
         (color === "all" || (orientations?.[f.path] ?? "white") === color),
     );
-  }, [files, search, color, orientations]);
+    // Paused repertoires go to the end of the list.
+    return [...list].sort(
+      (a, b) => Number(isRepertoirePaused(a.path)) - Number(isRepertoirePaused(b.path)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, search, color, orientations, pauseVersion]);
 
   // Each card reports how many positions it has to practice (it knows the PGN).
   const [toDoByFile, setToDoByFile] = useState<Record<string, number>>({});
@@ -437,7 +477,9 @@ export default function RepertoiresPage() {
     if (!files || files.length === 0) return;
     setStartingTrainAll(true);
     try {
-      const mixedFiles = files.map((f) => ({ path: f.path, name: f.name }));
+      const mixedFiles = files
+        .filter((f) => !isRepertoirePaused(f.path))
+        .map((f) => ({ path: f.path, name: f.name }));
       const queue = await prepareMixedSession(mixedFiles);
       const first = queue[0] && files.find((f) => f.path === queue[0].path);
       if (!first) {
@@ -598,6 +640,7 @@ export default function RepertoiresPage() {
                 onRename={setRenaming}
                 onDelete={setDeleting}
                 onToDo={reportToDo}
+                onPauseChange={() => setPauseVersion((v) => v + 1)}
               />
             ))}
           </SimpleGrid>

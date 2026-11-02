@@ -12,7 +12,9 @@ import {
     mergeDecks,
     emptyDeck,
     PROGRESS_PREFIX,
-    parseProgress,
+    newerPause,
+    type PauseState,
+    parseProgressFile,
     planContentSync,
     progressPathFor,
     REPERTOIRES_PREFIX,
@@ -31,6 +33,9 @@ export interface SyncEnv {
     setDeck(relPgn: string, game: string, deck: PracticeData): void;
     /** Moves the practice decks of a renamed/moved PGN (merging into existing ones). */
     moveDecks(fromRelPgn: string, toRelPgn: string): void;
+    /** Pause state of a PGN file in the sync folder (null = never paused). */
+    getPause(relPgn: string): PauseState | null;
+    setPause(relPgn: string, state: PauseState): void;
 }
 
 export type SyncManifest = {
@@ -213,12 +218,23 @@ export async function runSync(
         // Download only if it changed since our last sync: otherwise everything in it
         // was already merged into the local decks.
         let remoteGames: Record<string, PracticeData> = {};
+        let remotePause: PauseState | null = null;
         if (remoteSha && remoteSha !== previous.progress[progressPath]) {
             try {
-                remoteGames = parseProgress(decoder.decode(await client.getBlob(remoteSha)));
+                const remote = parseProgressFile(decoder.decode(await client.getBlob(remoteSha)));
+                remoteGames = remote.games;
+                remotePause = remote.pause;
             } catch {
                 remoteGames = {};
             }
+        }
+
+        // Pause: the most recent change (from any device) wins.
+        const localPause = env.getPause(relPgn);
+        const pause = newerPause(localPause, remotePause);
+        if (pause && pause !== localPause) {
+            env.setPause(relPgn, pause);
+            summary.progressUpdated++;
         }
 
         const localGames = env.getDecks(relPgn);
@@ -233,11 +249,11 @@ export async function runSync(
             if (!isEmptyDeck(deck)) merged[game] = deck;
         }
 
-        if (Object.keys(merged).length === 0) {
+        if (Object.keys(merged).length === 0 && !pause) {
             if (shaAtPath) progressManifest[progressPath] = shaAtPath;
             continue;
         }
-        const bytes = encoder.encode(serializeProgress(merged));
+        const bytes = encoder.encode(serializeProgress(merged, pause));
         let sha = await gitBlobSha(bytes);
         if (sha !== shaAtPath) {
             sha = await client.createBlob(bytes);

@@ -54,7 +54,9 @@ const memoryEnv: SyncEnv = {
             delete files[rel];
             const decks = { ...s.decks };
             delete decks[rel];
-            return { ...s, files, decks };
+            const pauses = { ...s.pauses };
+            delete pauses[rel];
+            return { ...s, files, decks, pauses };
         });
     },
     getDecks(rel) {
@@ -62,16 +64,29 @@ const memoryEnv: SyncEnv = {
     },
     moveDecks(from, to) {
         updateState((s) => {
-            const old = s.decks[from];
-            if (!old) return s;
-            const target = { ...s.decks[to] };
-            for (const [game, deck] of Object.entries(old)) {
-                target[game] = mergeDecks(target[game] ?? emptyDeck(), deck);
+            const decks = { ...s.decks };
+            const old = decks[from];
+            if (old) {
+                const target = { ...decks[to] };
+                for (const [game, deck] of Object.entries(old)) {
+                    target[game] = mergeDecks(target[game] ?? emptyDeck(), deck);
+                }
+                decks[to] = target;
+                delete decks[from];
             }
-            const decks = { ...s.decks, [to]: target };
-            delete decks[from];
-            return { ...s, decks };
+            const pauses = { ...s.pauses };
+            if (pauses[from]) {
+                pauses[to] = pauses[from];
+                delete pauses[from];
+            }
+            return { ...s, decks, pauses };
         });
+    },
+    getPause(rel) {
+        return getState().pauses?.[rel] ?? null;
+    },
+    setPause(rel, state) {
+        updateState((s) => ({ ...s, pauses: { ...s.pauses, [rel]: state } }));
     },
     setDeck(rel, game, deck) {
         updateState((s) => ({
