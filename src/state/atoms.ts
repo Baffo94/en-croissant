@@ -34,6 +34,7 @@ import {
 } from "@/utils/lichess/explorer";
 import { getWinChance, normalizeScore } from "@/utils/score";
 import { genID, type Tab, tabSchema } from "@/utils/tabs";
+import type { MixedFile, MixedItem } from "@/utils/trainAll";
 import { getEnginesDir } from "../utils/directories";
 import type { Session } from "../utils/session";
 import { createAsyncZodStorage, createZodStorage } from "./utils";
@@ -550,15 +551,20 @@ export const practiceStateFamily = atomFamily((_tab: string) =>
 export const practiceStateAtom = tabValue(practiceStateFamily);
 
 export type PracticeSessionStats = {
-    mode: "anki" | "full";
+    /** "mixed": "Train all" session over every repertoire (positions in mixedQueue). */
+    mode: "anki" | "full" | "mixed";
     remainingPositions: number[];
+    mixedQueue?: MixedItem[];
+    mixedFiles?: MixedFile[];
+    /** Set when a "Train all" session ran out of due positions. */
+    mixedDone?: boolean;
     correct: number;
     incorrect: number;
     streak: number;
     bestStreak: number;
 };
 
-const practiceSessionStatsFamily = atomFamily((_tab: string) =>
+export const practiceSessionStatsFamily = atomFamily((_tab: string) =>
     atom<PracticeSessionStats>({
         mode: "anki",
         remainingPositions: [],

@@ -60,7 +60,12 @@ import {
   practiceStateAtom,
   practiceAutoDifficultyAtom,
 } from "@/state/atoms";
+import { notifications } from "@mantine/notifications";
+import { commands } from "@/bindings";
+import { parsePGN } from "@/utils/chess";
 import { scheduleSync } from "@/utils/sync";
+import { currentDecks, dueItems, type MixedFile } from "@/utils/trainAll";
+import { unwrap } from "@/utils/unwrap";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import { findFen, getNodeAtPath } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
@@ -78,8 +83,11 @@ function PracticePanel() {
   const setPracticePath = useStore(store, (s) => s.setPracticePath);
   const currentFen = useStore(store, (s) => s.currentNode().fen);
 
-  const currentTab = useAtomValue(currentTabAtom);
+  const [currentTab, setCurrentTab] = useAtom(currentTabAtom);
   const tabFile = getTabFile(currentTab);
+  const setTreeState = useStore(store, (s) => s.setState);
+  /** True while a "Train all" session loads the next repertoire into this tab. */
+  const switchingRef = useRef(false);
   const [resetModal, toggleResetModal] = useToggle();
 
   const [deck, setDeck] = useAtom(
@@ -145,7 +153,43 @@ function PracticePanel() {
 
       let c: (typeof deck.positions)[0] | null | undefined;
 
-      if (currentMode === "full") {
+      if (currentMode === "mixed") {
+        const files = stats?.mixedFiles ?? sessionStats.mixedFiles ?? [];
+        let queue = stats?.mixedQueue ?? sessionStats.mixedQueue ?? [];
+        // Positions answered "again" come back once they are due.
+        if (queue.length === 0) queue = dueItems(currentDecks(files));
+        // Drop positions that are no longer in their repertoire.
+        while (
+          queue.length > 0 &&
+          queue[0].path === tabFile?.path &&
+          !deck.positions.some((p) => p.fen === queue[0].fen)
+        ) {
+          queue = queue.slice(1);
+        }
+        const head = queue[0];
+        if (!head) {
+          setSessionStats((prev) => ({
+            ...prev,
+            mode: "anki",
+            mixedQueue: [],
+            mixedDone: true,
+          }));
+          setPracticeState({ phase: "idle" });
+          setPracticePath(null);
+          setInvisible(false);
+          setShowComments(true);
+          setEvalOpen(true);
+          return;
+        }
+        setSessionStats((prev) => ({ ...prev, mixedQueue: queue }));
+        if (head.path !== tabFile?.path) {
+          // The effect below starts the position once the repertoire is loaded.
+          setPracticeState({ phase: "idle" });
+          void loadRepertoire(head.path, files);
+          return;
+        }
+        c = deck.positions.find((p) => p.fen === head.fen);
+      } else if (currentMode === "full") {
         if (remaining.length > 0) {
           c = deck.positions[remaining[0]];
         } else {
@@ -176,6 +220,10 @@ function PracticePanel() {
       deck.positions,
       sessionStats.mode,
       sessionStats.remainingPositions,
+      sessionStats.mixedQueue,
+      sessionStats.mixedFiles,
+      tabFile?.path,
+      setSessionStats,
       root,
       goToMove,
       setPracticePath,
@@ -186,6 +234,81 @@ function PracticePanel() {
       setPracticeState,
     ],
   );
+
+  /** Loads another repertoire into this tab (first game), for "Train all". */
+  async function loadRepertoire(path: string, files: MixedFile[]) {
+    if (switchingRef.current) return;
+    if (store.getState().dirty) {
+      notifications.show({
+        color: "orange",
+        title: t("Board.Practice.TrainAllPaused"),
+        message: t("Board.Practice.TrainAllSaveFirst"),
+      });
+      setSessionStats((prev) => ({ ...prev, mode: "anki", mixedQueue: [] }));
+      return;
+    }
+    switchingRef.current = true;
+    try {
+      const [games, count] = await Promise.all([
+        commands.readGames(path, 0, 0),
+        commands.countPgnGames(path),
+      ]);
+      const tree = await parsePGN(unwrap(games)[0] ?? "");
+      const name = files.find((f) => f.path === path)?.name ?? path;
+      setTreeState(tree);
+      setCurrentTab((prev) => ({
+        ...prev,
+        name,
+        gameOrigin: {
+          kind: "file",
+          gameNumber: 0,
+          file: {
+            type: "file",
+            name,
+            path,
+            numGames: unwrap(count),
+            metadata: { type: "repertoire", tags: [] },
+            lastModified: Date.now(),
+          },
+        },
+      }));
+    } catch (e) {
+      notifications.show({ color: "red", title: t("Common.Error"), message: String(e) });
+      // Skip the repertoire that can't be read.
+      setSessionStats((prev) => ({
+        ...prev,
+        mixedQueue: (prev.mixedQueue ?? []).filter((item) => item.path !== path),
+      }));
+    } finally {
+      switchingRef.current = false;
+    }
+  }
+
+  // "Train all": start the next position once its repertoire is loaded in this tab.
+  useEffect(() => {
+    if (sessionStats.mode !== "mixed" || practiceState.phase !== "idle") return;
+    if (switchingRef.current || deck.positions.length === 0) return;
+    const head = sessionStats.mixedQueue?.[0];
+    if (!head || head.path === tabFile?.path) newPractice();
+    else void loadRepertoire(head.path, sessionStats.mixedFiles ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sessionStats.mode,
+    sessionStats.mixedQueue,
+    practiceState.phase,
+    tabFile?.path,
+    deck.positions,
+    root,
+  ]);
+
+  /** Goes to the next position (in "Train all" the current one leaves the queue). */
+  const nextCard = useCallback(() => {
+    if (sessionStats.mode === "mixed") {
+      newPractice({ mixedQueue: (sessionStats.mixedQueue ?? []).slice(1) });
+    } else {
+      newPractice();
+    }
+  }, [newPractice, sessionStats.mode, sessionStats.mixedQueue]);
 
   useEffect(() => {
     if (practiceState.phase === "correct") {
@@ -217,7 +340,7 @@ function PracticePanel() {
             streak: prev.streak + 1,
             bestStreak: Math.max(prev.bestStreak, prev.streak + 1),
           }));
-          newPractice();
+          nextCard();
         }, 300);
         return () => clearTimeout(timer);
       }
@@ -228,6 +351,7 @@ function PracticePanel() {
     sessionStats.mode,
     sessionStats.remainingPositions,
     newPractice,
+    nextCard,
     setSessionStats,
     practiceAutoDifficulty,
     deck.positions,
@@ -250,12 +374,13 @@ function PracticePanel() {
       streak: prev.streak + 1,
       bestStreak: Math.max(prev.bestStreak, prev.streak + 1),
     }));
-    newPractice();
+    nextCard();
   }
 
   function startPractice() {
     const stats: Partial<PracticeSessionStats> = {
       mode: "anki",
+      mixedDone: false,
       remainingPositions: [],
       correct: 0,
       incorrect: 0,
@@ -270,6 +395,7 @@ function PracticePanel() {
     const indices = deck.positions.map((_, i) => i);
     const stats: Partial<PracticeSessionStats> = {
       mode: "full",
+      mixedDone: false,
       remainingPositions: indices,
       correct: 0,
       incorrect: 0,
@@ -286,7 +412,7 @@ function PracticePanel() {
       setSessionStats((prev) => ({ ...prev, remainingPositions }));
       newPractice({ remainingPositions });
     } else {
-      newPractice();
+      nextCard();
     }
   }
 
@@ -337,6 +463,24 @@ function PracticePanel() {
                     {t("Board.Practice.GoToBuild")}
                   </Button>
                 </Stack>
+              </Alert>
+            )}
+            {sessionStats.mode === "mixed" && (
+              <Alert color="orange" icon={<IconTarget />} title={t("Board.Practice.TrainAll")}>
+                {t("Board.Practice.TrainAllQueue", {
+                  count: sessionStats.mixedQueue?.length ?? 0,
+                })}
+              </Alert>
+            )}
+            {sessionStats.mixedDone && practiceState.phase === "idle" && (
+              <Alert
+                color="green"
+                icon={<IconCheck />}
+                title={t("Board.Practice.TrainAll")}
+                withCloseButton
+                onClose={() => setSessionStats((prev) => ({ ...prev, mixedDone: false }))}
+              >
+                {t("Board.Practice.TrainAllDone")}
               </Alert>
             )}
             {syncMessage && (

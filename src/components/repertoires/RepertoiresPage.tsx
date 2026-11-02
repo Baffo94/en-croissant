@@ -52,11 +52,11 @@ import { EditModal } from "@/components/files/Modals";
 import { buildFromTree, getStats, type PracticeData } from "@/components/files/opening";
 import { SyncStatusText, summaryText } from "@/components/SyncButton";
 import CreateRepertoireModal from "@/components/tabs/CreateRepertoireModal";
-import TrainAll from "./TrainAll";
 import {
   activeTabAtom,
   addRecentFileAtom,
   deckAtomFamily,
+  practiceSessionStatsFamily,
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
@@ -71,6 +71,7 @@ import {
 } from "@/utils/sync";
 import { normalizePath, relativePath } from "@/utils/sync/core";
 import { createTab } from "@/utils/tabs";
+import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 
 dayjs.extend(relativeTime);
@@ -347,7 +348,7 @@ export default function RepertoiresPage() {
   const [createDir, setCreateDir] = useState<string | undefined>(undefined);
   const [renaming, setRenaming] = useState<RepertoireFile | null>(null);
   const [deleting, setDeleting] = useState<RepertoireFile | null>(null);
-  const [trainAll, setTrainAll] = useState(false);
+  const [startingTrainAll, setStartingTrainAll] = useState(false);
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
@@ -428,6 +429,40 @@ export default function RepertoiresPage() {
     if (practice) store.set(tabFamily(tabId), "practice");
     store.set(addRecentFileAtom, { name: file.name, path: file.path, type: "repertoire" });
     navigate({ to: "/" });
+    return tabId;
+  }
+
+  /** Opens a practice tab that goes through the due positions of every repertoire. */
+  async function startTrainAll() {
+    if (!files || files.length === 0) return;
+    setStartingTrainAll(true);
+    try {
+      const mixedFiles = files.map((f) => ({ path: f.path, name: f.name }));
+      const queue = await prepareMixedSession(mixedFiles);
+      const first = queue[0] && files.find((f) => f.path === queue[0].path);
+      if (!first) {
+        notifications.show({
+          color: "green",
+          title: t("Board.Practice.TrainAll"),
+          message: t("Repertoires.AllDone"),
+        });
+        return;
+      }
+      const tabId = await openRepertoire(first, true);
+      store.set(practiceSessionStatsFamily(tabId), {
+        mode: "mixed",
+        remainingPositions: [],
+        mixedQueue: queue,
+        mixedFiles,
+        mixedDone: false,
+        correct: 0,
+        incorrect: 0,
+        streak: 0,
+        bestStreak: 0,
+      });
+    } finally {
+      setStartingTrainAll(false);
+    }
   }
 
   async function startCreate() {
@@ -503,7 +538,8 @@ export default function RepertoiresPage() {
             <Button
               color="orange"
               leftSection={<IconTarget size="1rem" />}
-              onClick={() => setTrainAll(true)}
+              loading={startingTrainAll}
+              onClick={startTrainAll}
             >
               {t("Repertoires.TrainAll", { count: totals.toDo })}
             </Button>
@@ -568,14 +604,6 @@ export default function RepertoiresPage() {
         )}
       </ScrollArea>
 
-      <TrainAll
-        opened={trainAll}
-        files={(files ?? []).map((f) => ({ path: f.path, name: f.name }))}
-        onClose={() => {
-          setTrainAll(false);
-          mutate();
-        }}
-      />
       <CreateRepertoireModal
         opened={createOpen}
         setOpened={setCreateOpen}
