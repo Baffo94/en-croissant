@@ -3,7 +3,7 @@ import { useForm } from "@mantine/form";
 import { useAtom, useAtomValue } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { notifications } from "@mantine/notifications";
-import { memo, useContext, useEffect, useMemo, useRef } from "react";
+import { memo, useContext, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { commands, type GoMode } from "@/bindings";
@@ -18,6 +18,13 @@ const reportSettingsAtom = atomWithStorage("report-settings", {
   goMode: { t: "Time", c: 500 } as Exclude<GoMode, { t: "Infinite" }>,
   engine: "",
 });
+
+/**
+ * Latest report started in each tab. Starting a new report stops the previous one,
+ * so only the latest may update the UI. Kept outside the component because the
+ * report panel is unmounted when another panel is shown.
+ */
+const latestRun = new Map<string, number>();
 
 function ReportModal({
   tab,
@@ -46,8 +53,6 @@ function ReportModal({
   const addAnalysis = useStore(store, (s) => s.addAnalysis);
 
   const [reportSettings, setReportSettings] = useAtom(reportSettingsAtom);
-  // Starting a new report stops the previous one: only the latest may update the UI.
-  const runRef = useRef(0);
 
   const form = useForm({
     initialValues: reportSettings,
@@ -73,7 +78,9 @@ function ReportModal({
   }, [localEngines, reportSettings]);
 
   function analyze() {
-    const run = ++runRef.current;
+    const run = (latestRun.get(tab) ?? 0) + 1;
+    latestRun.set(tab, run);
+    const isLatest = () => latestRun.get(tab) === run;
     setReportSettings(form.values);
     setInProgress(true);
     closeReportingMode();
@@ -98,7 +105,7 @@ function ReportModal({
         engineSettings,
       )
       .then((analysis) => {
-        if (run !== runRef.current) return;
+        if (!isLatest()) return;
         if (analysis.status === "ok") {
           addAnalysis(analysis.data, {
             showVariations: form.values.variations,
@@ -112,7 +119,7 @@ function ReportModal({
         }
       })
       .catch((e) => {
-        if (run !== runRef.current) return;
+        if (!isLatest()) return;
         notifications.show({
           color: "red",
           title: t("Board.Analysis.ReportFailed"),
@@ -120,7 +127,7 @@ function ReportModal({
         });
       })
       .finally(() => {
-        if (run === runRef.current) setInProgress(false);
+        if (isLatest()) setInProgress(false);
       });
   }
 

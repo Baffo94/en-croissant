@@ -42,7 +42,8 @@ function ReportPanel() {
       const total = mainLine.length + 1;
       const done = Math.min(total, Math.round((progress / 100) * total));
       let text = `${done}/${total}`;
-      if (progress > 0 && progress < 100 && startedAt.current) {
+      if (progress >= 100) return undefined;
+      if (progress > 0 && startedAt.current) {
         const elapsed = Date.now() - startedAt.current;
         const remaining = (elapsed * (100 - progress)) / progress;
         const minutes = Math.round(remaining / 60000);
@@ -88,6 +89,7 @@ function ReportPanel() {
             action: t("Board.Analysis.GenerateReport"),
             completed: t("Board.Analysis.ReportGenerated"),
             inProgress: t("Board.Analysis.GeneratingReport"),
+            finalizing: t("Board.Analysis.SearchingNovelties"),
           }}
           inProgress={inProgress}
           setInProgress={setInProgress}

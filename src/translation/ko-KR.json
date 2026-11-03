@@ -57,6 +57,7 @@
     "Board.Analysis.ReportGenerated": "보고서 생성됨",
     "Board.Analysis.Reversed": "역순 분석",
     "Board.Analysis.Reversed.Desc": "마지막 수부터 게임을 분석합니다.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "변형 수순 보기",
     "Board.Analysis.ShowVariations.Desc": "실수가 있다면 최선 수순을 추가합니다",
     "Board.Analysis.SyncGlobally": "전역 동기화",

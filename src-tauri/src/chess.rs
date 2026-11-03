@@ -19,6 +19,7 @@ use shakmaty::{
     Position, Role,
 };
 use specta::Type;
+use tauri::Manager;
 use tauri_specta::Event;
 use tokio::sync::Mutex;
 use vampirc_uci::{
@@ -28,7 +29,7 @@ use vampirc_uci::{
 };
 
 use crate::{
-    db::{is_position_in_db, GameQuery, PositionQueryJs},
+    db::{position_in_db_blocking, GameQuery, PositionQueryJs},
     engine::{
         parse_fen_and_apply_moves, BaseEngine, EngineLog, EngineOption, EngineReader, GoMode,
     },
@@ -481,6 +482,11 @@ fn report_engine_timeout(go_mode: &GoMode) -> Duration {
     }
 }
 
+/// Longest time allowed to check one position against the reference database.
+const NOVELTY_QUERY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Longest time for the whole novelty search of a report.
+const NOVELTY_PHASE_TIMEOUT: Duration = Duration::from_secs(90);
+
 /// How often a running report checks for cancellation and engine timeouts.
 const REPORT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -615,6 +621,9 @@ pub async fn analyze_game(
         id: id.clone(),
         flag: cancel_flag.clone(),
     };
+    if options.annotate_novelties && options.reference_db.is_none() {
+        return Err(Error::MissingReferenceDatabase);
+    }
 
     let path = PathBuf::from(&engine);
     let mut analysis: Vec<MoveAnalysis> = Vec::new();
@@ -721,27 +730,60 @@ pub async fn analyze_game(
         fens.reverse();
     }
 
+    // Second phase: look for the first move that is not in the reference database.
+    // Reported as 100% "not finished" so the UI can say what is going on.
+    update_progress(&state.progress_state, &app, id.clone(), 100.0, false)?;
+    let novelty_phase_start = Instant::now();
+    let reference_db = options.reference_db.clone().filter(|_| options.annotate_novelties);
+    let mut novelty_search_done = reference_db.is_none();
     for (i, analysis) in analysis.iter_mut().enumerate() {
-        let fen = &fens[i].0;
-        let query = PositionQueryJs {
-            fen: fen.to_string(),
-            type_: "exact".to_string(),
-        };
-
         analysis.is_sacrifice = fens[i].2;
-        if options.annotate_novelties && !novelty_found {
-            if let Some(reference) = options.reference_db.clone() {
-                analysis.novelty = !is_position_in_db(
-                    reference,
-                    GameQuery::new().position(query.clone()).clone(),
-                    state.clone(),
-                )
-                .await?;
+        if novelty_search_done {
+            continue;
+        }
+        if novelty_phase_start.elapsed() > NOVELTY_PHASE_TIMEOUT {
+            warn!("Report {}: novelty search too slow, giving up", id);
+            novelty_search_done = true;
+            continue;
+        }
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Err(Error::AnalysisCancelled);
+        }
+        let reference = reference_db.clone().unwrap_or_default();
+        let query = GameQuery::new()
+            .position(PositionQueryJs {
+                fen: fens[i].0.to_string(),
+                type_: "exact".to_string(),
+            })
+            .clone();
+        // The DuckDB query blocks: run it on a blocking thread with a time limit, so
+        // a slow or locked database can't keep the report from finishing.
+        let app_handle = app.clone();
+        let lookup = tokio::task::spawn_blocking(move || {
+            let state = app_handle.state::<AppState>();
+            position_in_db_blocking(&state, &reference, &query)
+        });
+        match tokio::time::timeout(NOVELTY_QUERY_TIMEOUT, lookup).await {
+            Ok(Ok(Ok(in_db))) => {
+                analysis.novelty = !in_db;
                 if analysis.novelty {
-                    novelty_found = true;
+                    novelty_search_done = true;
                 }
-            } else {
-                return Err(Error::MissingReferenceDatabase);
+            }
+            Ok(Ok(Err(e))) => {
+                warn!("Report {}: novelty search failed, skipping it: {}", id, e);
+                novelty_search_done = true;
+            }
+            Ok(Err(e)) => {
+                warn!("Report {}: novelty search crashed, skipping it: {}", id, e);
+                novelty_search_done = true;
+            }
+            Err(_) => {
+                warn!(
+                    "Report {}: novelty search took more than {:?}, skipping it",
+                    id, NOVELTY_QUERY_TIMEOUT
+                );
+                novelty_search_done = true;
             }
         }
     }

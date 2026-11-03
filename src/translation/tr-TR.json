@@ -58,6 +58,7 @@
     "Board.Analysis.ReportGenerated": "Rapor oluşturuldu",
     "Board.Analysis.Reversed": "Tersten analiz",
     "Board.Analysis.Reversed.Desc": "Oyunu son hamleden ilk hamleye analiz eder.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "Varyantları göster",
     "Board.Analysis.ShowVariations.Desc": "Hatalar için en iyi devam varyantlarını ekle",
     "Board.Analysis.SyncGlobally": "Global olarak senkron et",

@@ -60,6 +60,7 @@
     "Board.Analysis.ReportGenerated": "Отчёт создан",
     "Board.Analysis.Reversed": "Обратный анализ",
     "Board.Analysis.Reversed.Desc": "Анализировать игру с последней позиции.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "",
     "Board.Analysis.ShowVariations.Desc": "",
     "Board.Analysis.SyncGlobally": "Синхронизировать глобально",

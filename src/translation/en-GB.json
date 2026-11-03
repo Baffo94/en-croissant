@@ -58,6 +58,7 @@
     "Board.Analysis.ReportGenerated": "Report generated",
     "Board.Analysis.Reversed": "Reversed analysis",
     "Board.Analysis.Reversed.Desc": "Analyse the game in starting from the last move.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "",
     "Board.Analysis.ShowVariations.Desc": "",
     "Board.Analysis.SyncGlobally": "Sync globally",

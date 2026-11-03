@@ -58,6 +58,7 @@
     "Board.Analysis.ReportGenerated": "Rapport lagd",
     "Board.Analysis.Reversed": "Baklengs analyse",
     "Board.Analysis.Reversed.Desc": "Analyser partiet fra siste til første trekk.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "",
     "Board.Analysis.ShowVariations.Desc": "",
     "Board.Analysis.SyncGlobally": "Synkroniser globalt",

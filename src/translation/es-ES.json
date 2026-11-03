@@ -59,6 +59,7 @@
     "Board.Analysis.ReportGenerated": "Reporte generado",
     "Board.Analysis.Reversed": "Análisis inverso",
     "Board.Analysis.Reversed.Desc": "Analizar la partida desde el último movimiento.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "",
     "Board.Analysis.ShowVariations.Desc": "",
     "Board.Analysis.SyncGlobally": "Sincronizar globalmente",

@@ -372,6 +372,16 @@ pub async fn is_position_in_db(
     query: GameQuery,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, Error> {
+    position_in_db_blocking(&state, &file, &query)
+}
+
+/// Whether a position appears in a database. Synchronous (DuckDB query), so callers
+/// that must stay responsive run it with `spawn_blocking`.
+pub fn position_in_db_blocking(
+    state: &AppState,
+    file: &Path,
+    query: &GameQuery,
+) -> Result<bool, Error> {
     let Some(position_query) = query.position.clone() else {
         return Ok(false);
     };
@@ -380,10 +390,10 @@ pub async fn is_position_in_db(
         return Ok(false);
     }
 
-    let db_pool = get_duckdb_pool(&state, &file)?;
+    let db_pool = get_duckdb_pool(state, file)?;
     let db = db_pool.get()?;
 
-    let where_clauses = build_position_where_clauses(&query, Some(&position_query.fen));
+    let where_clauses = build_position_where_clauses(query, Some(&position_query.fen));
 
     let where_sql = if where_clauses.is_empty() {
         String::new()

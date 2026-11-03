@@ -33,7 +33,9 @@ pub use self::legacy::convert_legacy_database;
 pub use self::models::NormalizedGame;
 pub use self::models::Puzzle;
 pub(crate) use self::search::PositionCache;
-pub use self::search::{is_position_in_db, search_position, PositionQueryJs};
+pub use self::search::{
+    is_position_in_db, position_in_db_blocking, search_position, PositionQueryJs,
+};
 
 const GAME_COLUMNS: &[&str] = &[
     "event",

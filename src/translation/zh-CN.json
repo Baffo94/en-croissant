@@ -57,6 +57,7 @@
     "Board.Analysis.ReportGenerated": "报告已生成",
     "Board.Analysis.Reversed": "反向分析",
     "Board.Analysis.Reversed.Desc": "从最后一步开始分析对局",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "显示变着",
     "Board.Analysis.ShowVariations.Desc": "为错着添加最佳续着线路",
     "Board.Analysis.SyncGlobally": "全局同步",

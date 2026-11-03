@@ -60,6 +60,7 @@
     "Board.Analysis.ReportGenerated": "Звіт створено",
     "Board.Analysis.Reversed": "Зворотний аналіз",
     "Board.Analysis.Reversed.Desc": "Аналізувати гру з останньої позиції.",
+    "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "",
     "Board.Analysis.ShowVariations.Desc": "",
     "Board.Analysis.SyncGlobally": "Синхронізувати глобально",
