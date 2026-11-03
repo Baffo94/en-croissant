@@ -3,7 +3,7 @@ import { IconZoomCheck } from "@tabler/icons-react";
 import cx from "clsx";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import React, { memo, useCallback, useContext, useMemo } from "react";
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { commands } from "@/bindings";
@@ -29,6 +29,29 @@ function ReportPanel() {
   const setInProgress = useStore(store, (s) => s.setReportInProgress);
 
   const stats = useMemo(() => getGameStats(root), [root]);
+  const mainLine = useMemo(() => getMainLine(root), [root]);
+
+  // Start time of the running report, for the remaining-time estimate.
+  const startedAt = useRef<number | null>(null);
+  useEffect(() => {
+    startedAt.current = inProgress ? Date.now() : null;
+  }, [inProgress]);
+
+  const progressDetail = useCallback(
+    (progress: number) => {
+      const total = mainLine.length + 1;
+      const done = Math.min(total, Math.round((progress / 100) * total));
+      let text = `${done}/${total}`;
+      if (progress > 0 && progress < 100 && startedAt.current) {
+        const elapsed = Date.now() - startedAt.current;
+        const remaining = (elapsed * (100 - progress)) / progress;
+        const minutes = Math.round(remaining / 60000);
+        text += ` · ${minutes >= 1 ? t("Board.Analysis.MinutesLeft", { count: minutes }) : t("Board.Analysis.LessThanMinute")}`;
+      }
+      return text;
+    },
+    [mainLine.length, t],
+  );
 
   const handleCancel = useCallback(() => {
     commands.cancelAnalysis(`report_${activeTab}`);
@@ -47,7 +70,7 @@ function ReportPanel() {
       <ReportModal
         tab={activeTab!}
         initialFen={root.fen}
-        moves={getMainLine(root)}
+        moves={mainLine}
         reportingMode={reportingMode}
         closeReportingMode={closeReportingMode}
         setInProgress={setInProgress}
@@ -68,6 +91,7 @@ function ReportPanel() {
           }}
           inProgress={inProgress}
           setInProgress={setInProgress}
+          progressDetail={progressDetail}
         />
 
         {stats.whiteAccuracy > 0 && stats.blackAccuracy > 0 && (

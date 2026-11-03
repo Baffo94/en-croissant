@@ -92,6 +92,9 @@ pub enum Error {
 
     #[error("Analysis cancelled")]
     AnalysisCancelled,
+
+    #[error("The engine is not responding")]
+    EngineNotResponding,
 }
 
 impl From<std::io::Error> for Error {

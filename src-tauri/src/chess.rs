@@ -5,9 +5,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
+use dashmap::DashMap;
 use derivative::Derivative;
 use governor::{Quota, RateLimiter};
 use log::{info, warn};
@@ -471,6 +472,116 @@ pub struct AnalysisOptions {
     pub reversed: bool,
 }
 
+/// Longest time the engine may stay silent while analysing one position of a report
+/// before it is considered stuck (it normally prints "info" lines all the time).
+fn report_engine_timeout(go_mode: &GoMode) -> Duration {
+    match go_mode {
+        GoMode::Time(ms) => Duration::from_millis(*ms as u64) + Duration::from_secs(15),
+        _ => Duration::from_secs(120),
+    }
+}
+
+/// How often a running report checks for cancellation and engine timeouts.
+const REPORT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+enum PositionOutcome {
+    Done(MoveAnalysis),
+    Cancelled,
+    /// The engine stopped answering (stuck, crashed or closed its output).
+    Unresponsive,
+}
+
+/// Analyses one position of a report. Never waits forever: it returns when the engine
+/// answers, when the report is cancelled or when the engine stays silent too long.
+async fn analyse_report_position(
+    proc: &mut EngineProcess,
+    reader: &mut EngineReader,
+    fen: &str,
+    moves: &[String],
+    go_mode: &GoMode,
+    uci_options: &[EngineOption],
+    cancel_flag: &AtomicBool,
+) -> Result<PositionOutcome, Error> {
+    let mut extra_options = uci_options.to_vec();
+    if !extra_options.iter().any(|x| x.name == "MultiPV") {
+        extra_options.push(EngineOption {
+            name: "MultiPV".to_string(),
+            value: "2".to_string(),
+        });
+    } else {
+        extra_options.iter_mut().for_each(|x| {
+            if x.name == "MultiPV" {
+                x.value = "2".to_string();
+            }
+        });
+    }
+
+    proc.set_options(EngineOptions {
+        fen: fen.to_string(),
+        moves: moves.to_vec(),
+        extra_options,
+    })
+    .await?;
+    proc.go(go_mode).await?;
+
+    let max_silence = report_engine_timeout(go_mode);
+    let mut last_output = Instant::now();
+    let mut current_analysis = MoveAnalysis::default();
+    loop {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(PositionOutcome::Cancelled);
+        }
+        if last_output.elapsed() > max_silence {
+            return Ok(PositionOutcome::Unresponsive);
+        }
+        // `next_line` is cancel safe, so polling it with a timeout loses nothing.
+        let line = match tokio::time::timeout(REPORT_POLL_INTERVAL, reader.next_line()).await {
+            Err(_) => continue,
+            Ok(Ok(Some(line))) => line,
+            Ok(Ok(None)) | Ok(Err(_)) => return Ok(PositionOutcome::Unresponsive),
+        };
+        last_output = Instant::now();
+        match parse_one(&line) {
+            UciMessage::Info(attrs) => {
+                if let Ok(best_moves) = parse_uci_attrs(attrs, &proc.options.fen.parse()?, moves)
+                {
+                    let multipv = best_moves.multipv;
+                    let cur_depth = best_moves.depth;
+                    if multipv as usize == proc.best_moves.len() + 1 {
+                        proc.best_moves.push(best_moves);
+                        if multipv == proc.real_multipv {
+                            if proc.best_moves.iter().all(|x| x.depth == cur_depth)
+                                && cur_depth >= proc.last_depth
+                            {
+                                current_analysis.best = proc.best_moves.clone();
+                                proc.last_depth = cur_depth;
+                            }
+                            proc.best_moves.clear();
+                        }
+                    }
+                }
+            }
+            UciMessage::BestMove { .. } => return Ok(PositionOutcome::Done(current_analysis)),
+            _ => {}
+        }
+    }
+}
+
+/// Removes the cancel flag of a report when it ends, but only if it is still this
+/// report's flag (a newer report with the same id may have replaced it).
+struct CancelFlagGuard<'a> {
+    flags: &'a DashMap<String, Arc<AtomicBool>>,
+    id: String,
+    flag: Arc<AtomicBool>,
+}
+
+impl Drop for CancelFlagGuard<'_> {
+    fn drop(&mut self) {
+        self.flags
+            .remove_if(&self.id, |_, current| Arc::ptr_eq(current, &self.flag));
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn cancel_analysis(id: String, state: tauri::State<'_, AppState>) -> Result<(), Error> {
@@ -492,14 +603,23 @@ pub async fn analyze_game(
     app: tauri::AppHandle,
 ) -> Result<Vec<MoveAnalysis>, Error> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    state
+    // A report still running for the same tab is stopped: only one at a time.
+    if let Some(previous) = state
         .analysis_cancel_flags
-        .insert(id.clone(), cancel_flag.clone());
+        .insert(id.clone(), cancel_flag.clone())
+    {
+        previous.store(true, Ordering::SeqCst);
+    }
+    let _guard = CancelFlagGuard {
+        flags: &state.analysis_cancel_flags,
+        id: id.clone(),
+        flag: cancel_flag.clone(),
+    };
 
     let path = PathBuf::from(&engine);
     let mut analysis: Vec<MoveAnalysis> = Vec::new();
 
-    let (mut proc, mut reader) = EngineProcess::new(path).await?;
+    let (mut proc, mut reader) = EngineProcess::new(path.clone()).await?;
 
     let fen = Fen::from_ascii(options.fen.as_bytes())?;
     let setup = fen.as_setup().clone();
@@ -538,8 +658,7 @@ pub async fn analyze_game(
 
     for (i, (_, moves, _)) in fens.iter().enumerate() {
         if cancel_flag.load(Ordering::SeqCst) {
-            proc.kill().await?;
-            state.analysis_cancel_flags.remove(&id);
+            proc.kill_sync();
             return Err(Error::AnalysisCancelled);
         }
 
@@ -551,61 +670,51 @@ pub async fn analyze_game(
             false,
         )?;
 
-        let mut extra_options = uci_options.clone();
-        if !extra_options.iter().any(|x| x.name == "MultiPV") {
-            extra_options.push(EngineOption {
-                name: "MultiPV".to_string(),
-                value: "2".to_string(),
-            });
-        } else {
-            extra_options.iter_mut().for_each(|x| {
-                if x.name == "MultiPV" {
-                    x.value = "2".to_string();
+        // If the engine stops answering, restart it once and retry the position.
+        let mut attempt = 0;
+        let current_analysis = loop {
+            let outcome = analyse_report_position(
+                &mut proc,
+                &mut reader,
+                &options.fen,
+                moves,
+                &go_mode,
+                &uci_options,
+                &cancel_flag,
+            )
+            .await;
+            match outcome {
+                Ok(PositionOutcome::Done(result)) => break result,
+                Ok(PositionOutcome::Cancelled) => {
+                    proc.kill_sync();
+                    return Err(Error::AnalysisCancelled);
                 }
-            });
-        }
-
-        proc.set_options(EngineOptions {
-            fen: options.fen.clone(),
-            moves: moves.clone(),
-            extra_options,
-        })
-        .await?;
-
-        proc.go(&go_mode).await?;
-
-        let mut current_analysis = MoveAnalysis::default();
-        while let Ok(Some(line)) = reader.next_line().await {
-            match parse_one(&line) {
-                UciMessage::Info(attrs) => {
-                    if let Ok(best_moves) =
-                        parse_uci_attrs(attrs, &proc.options.fen.parse()?, moves)
-                    {
-                        let multipv = best_moves.multipv;
-                        let cur_depth = best_moves.depth;
-                        if multipv as usize == proc.best_moves.len() + 1 {
-                            proc.best_moves.push(best_moves);
-                            if multipv == proc.real_multipv {
-                                if proc.best_moves.iter().all(|x| x.depth == cur_depth)
-                                    && cur_depth >= proc.last_depth
-                                {
-                                    current_analysis.best = proc.best_moves.clone();
-                                    proc.last_depth = cur_depth;
-                                }
-                                assert_eq!(proc.best_moves.len(), proc.real_multipv as usize);
-                                proc.best_moves.clear();
-                            }
-                        }
-                    }
+                Ok(PositionOutcome::Unresponsive) | Err(Error::EngineDisconnected)
+                    if attempt == 0 =>
+                {
+                    warn!(
+                        "Report {}: engine not responding at position {}, restarting it",
+                        id, i
+                    );
+                    proc.kill_sync();
+                    let (new_proc, new_reader) = EngineProcess::new(path.clone()).await?;
+                    proc = new_proc;
+                    reader = new_reader;
+                    attempt += 1;
                 }
-                UciMessage::BestMove { .. } => {
-                    break;
+                Ok(PositionOutcome::Unresponsive) => {
+                    proc.kill_sync();
+                    return Err(Error::EngineNotResponding);
                 }
-                _ => {}
+                Err(e) => {
+                    proc.kill_sync();
+                    return Err(e);
+                }
             }
-        }
+        };
         analysis.push(current_analysis);
     }
+    proc.kill_sync();
 
     if options.reversed {
         analysis.reverse();
@@ -614,7 +723,6 @@ pub async fn analyze_game(
 
     for (i, analysis) in analysis.iter_mut().enumerate() {
         let fen = &fens[i].0;
-        // let query = PositionQuery::exact_from_fen(&fen.to_string())?;
         let query = PositionQueryJs {
             fen: fen.to_string(),
             type_: "exact".to_string(),
@@ -638,7 +746,6 @@ pub async fn analyze_game(
         }
     }
     update_progress(&state.progress_state, &app, id.clone(), 100.0, true)?;
-    state.analysis_cancel_flags.remove(&id);
     Ok(analysis)
 }
 

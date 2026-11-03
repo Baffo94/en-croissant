@@ -20,6 +20,8 @@ type Props = {
   redoable?: boolean;
   inProgress: boolean;
   setInProgress: (inProgress: boolean) => void;
+  /** Extra text shown next to the "in progress" label, e.g. "12/80 · ~5 min". */
+  progressDetail?: (progress: number) => string | undefined;
 };
 
 function ProgressButton({
@@ -33,6 +35,7 @@ function ProgressButton({
   redoable,
   inProgress,
   setInProgress,
+  progressDetail,
 }: Props) {
   const { progress, finished, isActive, clear } = useProgress(id);
   const completed = initInstalled || finished;
@@ -60,6 +63,8 @@ function ProgressButton({
     if (progress === 0 && !showProgress) label = labels.action;
     else if (progress === 100) label = labels.finalizing ?? labels.inProgress;
     else label = labels.inProgress;
+    const detail = showProgress ? progressDetail?.(progress) : undefined;
+    if (detail) label = `${label} · ${detail}`;
   }
 
   return (

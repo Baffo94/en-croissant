@@ -2,7 +2,8 @@ import { Button, Checkbox, Group, Modal, NumberInput, Select, Stack } from "@man
 import { useForm } from "@mantine/form";
 import { useAtom, useAtomValue } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { memo, useContext, useEffect, useMemo } from "react";
+import { notifications } from "@mantine/notifications";
+import { memo, useContext, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { commands, type GoMode } from "@/bindings";
@@ -45,6 +46,8 @@ function ReportModal({
   const addAnalysis = useStore(store, (s) => s.addAnalysis);
 
   const [reportSettings, setReportSettings] = useAtom(reportSettingsAtom);
+  // Starting a new report stops the previous one: only the latest may update the UI.
+  const runRef = useRef(0);
 
   const form = useForm({
     initialValues: reportSettings,
@@ -70,6 +73,7 @@ function ReportModal({
   }, [localEngines, reportSettings]);
 
   function analyze() {
+    const run = ++runRef.current;
     setReportSettings(form.values);
     setInProgress(true);
     closeReportingMode();
@@ -94,13 +98,30 @@ function ReportModal({
         engineSettings,
       )
       .then((analysis) => {
+        if (run !== runRef.current) return;
         if (analysis.status === "ok") {
           addAnalysis(analysis.data, {
             showVariations: form.values.variations,
           });
+        } else if (analysis.error !== "Analysis cancelled") {
+          notifications.show({
+            color: "red",
+            title: t("Board.Analysis.ReportFailed"),
+            message: analysis.error,
+          });
         }
       })
-      .finally(() => setInProgress(false));
+      .catch((e) => {
+        if (run !== runRef.current) return;
+        notifications.show({
+          color: "red",
+          title: t("Board.Analysis.ReportFailed"),
+          message: String(e),
+        });
+      })
+      .finally(() => {
+        if (run === runRef.current) setInProgress(false);
+      });
   }
 
   return (
