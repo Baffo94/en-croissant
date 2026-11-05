@@ -162,7 +162,10 @@ function cardStats(decks: Record<number, PracticeData>, fallbackTotal: number): 
       reviews: 0,
     };
   }
-  const stats = getStats(positions);
+  const stats = getStats(
+    positions,
+    all.flatMap((d) => d.logs),
+  );
   let lastReview: Date | null = null;
   let reviews = 0;
   for (const deck of all) {

@@ -138,7 +138,7 @@ function PracticePanel() {
     lastSyncedTreeRef.current = treeFingerprint;
   }, [root, headers, setDeck]);
 
-  const stats = getStats(deck.positions);
+  const stats = getStats(deck.positions, deck.logs);
 
   const setInvisible = useSetAtom(currentInvisibleAtom);
   const setShowComments = useSetAtom(currentShowCommentsAtom);
@@ -200,7 +200,7 @@ function PracticePanel() {
           c = null;
         }
       } else {
-        c = getCardForReview(deck.positions);
+        c = getCardForReview(deck.positions, undefined, deck.logs);
       }
 
       if (!c) {

@@ -2,6 +2,7 @@ import type { SetStateAction } from "react";
 import {
     type Card,
     createEmptyCard,
+    Rating,
     State,
     fsrs,
     type Grade,
@@ -69,21 +70,42 @@ type Stats = {
 };
 
 /**
- * Positions answered wrongly come back after a few minutes (learning steps). Like
- * Anki's "learn ahead limit", they count as due when that is less than this far
- * away: otherwise a session ends with them pending and they turn up as due a few
+ * A position answered wrongly comes back after a few minutes (learning step). Like
+ * Anki's "learn ahead limit", it counts as due when that is less than this far
+ * away: otherwise a session ends with it pending and it turns up as due a few
  * minutes later on every device, as if the review had not been synced.
  */
 export const LEARN_AHEAD_MS = 20 * 60 * 1000;
 
-export function isDue(card: Card, now = new Date()): boolean {
+type Log = PracticeData["logs"][number];
+
+/**
+ * Positions whose latest answer was "again". Only these are learned ahead: a
+ * position rated "hard" stays in its learning step at every answer, so learning
+ * it ahead would bring it back forever.
+ */
+export function failedFens(logs: readonly Log[]): Set<string> {
+    const latest = new Map<string, { time: number; rating: number }>();
+    for (const log of logs) {
+        const time = new Date(log.review).getTime();
+        const prev = latest.get(log.fen);
+        if (!prev || time >= prev.time) latest.set(log.fen, { time, rating: log.rating });
+    }
+    const failed = new Set<string>();
+    for (const [fen, { rating }] of latest) if (rating === Rating.Again) failed.add(fen);
+    return failed;
+}
+
+/** Whether a position is to be reviewed now (`failed`: its latest answer was "again"). */
+export function isDue(card: Card, now = new Date(), failed = false): boolean {
     const due = new Date(card.due).getTime();
     if (due <= now.getTime()) return true;
+    if (!failed) return false;
     const learning = card.state === State.Learning || card.state === State.Relearning;
     return learning && due - now.getTime() <= LEARN_AHEAD_MS;
 }
 
-export function getStats(positions: Position[]) {
+export function getStats(positions: Position[], logs: readonly Log[] = []) {
     const stats: Stats = {
         unseen: 0,
         due: 0,
@@ -92,11 +114,12 @@ export function getStats(positions: Position[]) {
         total: positions.length,
     };
     const now = new Date();
+    const failed = failedFens(logs);
     for (const card of positions) {
         const dueDate = new Date(card.card.due);
         if (card.card.reps === 0) {
             stats.unseen++;
-        } else if (isDue(card.card, now)) {
+        } else if (isDue(card.card, now, failed.has(card.fen))) {
             stats.due++;
         } else {
             stats.practiced++;
@@ -111,6 +134,7 @@ export function getStats(positions: Position[]) {
 export function getCardForReview(
     positions: Position[],
     options: { random: boolean } = { random: false },
+    logs: readonly Log[] = [],
 ): Position | null {
     if (options.random) {
         return positions[Math.floor(Math.random() * positions.length)];
@@ -119,9 +143,10 @@ export function getCardForReview(
 
     const overdue = positions.find((position) => new Date(position.card.due) <= now);
     if (overdue) return overdue;
-    // Learning steps that are due shortly: earliest first.
+    // Positions just answered wrongly that are due shortly: earliest first.
+    const failed = failedFens(logs);
     const ahead = positions
-        .filter((position) => isDue(position.card, now))
+        .filter((position) => isDue(position.card, now, failed.has(position.fen)))
         .sort((a, b) => new Date(a.card.due).getTime() - new Date(b.card.due).getTime());
     return ahead[0] ?? null;
 }

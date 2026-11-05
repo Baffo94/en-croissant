@@ -77,7 +77,7 @@ export function listRepertoires(state: Content): RepertoireEntry[] {
                 name,
                 folder,
                 orientation: g.orientation,
-                stats: getStats(positions),
+                stats: getStats(positions, deck?.logs),
                 paused: state.pauses?.[rel]?.paused === true,
             });
         });

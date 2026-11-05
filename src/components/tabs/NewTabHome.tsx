@@ -56,7 +56,7 @@ function RecentFileDuePositions({ file }: { file: string }) {
     }),
   );
 
-  const stats = getStats(deck.positions);
+  const stats = getStats(deck.positions, deck.logs);
   const paused = usePaused(file);
 
   if (paused || stats.due + stats.unseen === 0) return null;

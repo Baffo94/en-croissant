@@ -524,7 +524,7 @@ function DuePositions({ file }: { file: string }) {
     }),
   );
 
-  const stats = getStats(deck.positions);
+  const stats = getStats(deck.positions, deck.logs);
 
   if (stats.due + stats.unseen === 0) return null;
 

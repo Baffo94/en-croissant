@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatReviewInterval,
   getNextReviewTimes,
+  failedFens,
   getStats,
   isDue,
   type PracticeData,
@@ -152,7 +153,9 @@ export function Practice({
     const now = new Date();
     const items: Item[] = [];
     for (const [key, deck] of Object.entries(all)) {
-      for (const p of deck.positions) if (isDue(p.card, now)) items.push({ key, fen: p.fen });
+      const failed = failedFens(deck.logs);
+      for (const p of deck.positions)
+        if (isDue(p.card, now, failed.has(p.fen))) items.push({ key, fen: p.fen });
     }
     return mixed ? shuffle(items) : items;
   };
@@ -182,7 +185,10 @@ export function Practice({
   }
 
   const allPositions = Object.values(decks).flatMap((d) => d.positions);
-  const stats = getStats(allPositions);
+  const stats = getStats(
+    allPositions,
+    Object.values(decks).flatMap((d) => d.logs),
+  );
   const current = queue[0];
   const currentSource = current ? prepared.sources[current.key] : prepared.sources[keys[0]];
   const pgn = currentSource.pgn;
