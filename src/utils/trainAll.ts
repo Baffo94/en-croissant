@@ -4,7 +4,7 @@
 
 import { getDefaultStore } from "jotai";
 import { commands } from "@/bindings";
-import { buildFromTree, type PracticeData, syncDeck } from "@/components/files/opening";
+import { buildFromTree, isDue, type PracticeData, syncDeck } from "@/components/files/opening";
 import { deckAtomFamily } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
 import { decksOfFile } from "@/utils/practiceDecks";
@@ -26,8 +26,7 @@ export function shuffle<T>(items: T[]): T[] {
 export function dueItems(decks: Record<string, PracticeData>, now = new Date()): MixedItem[] {
     const items: MixedItem[] = [];
     for (const [path, deck] of Object.entries(decks)) {
-        for (const p of deck.positions)
-            if (new Date(p.card.due) <= now) items.push({ path, fen: p.fen });
+        for (const p of deck.positions) if (isDue(p.card, now)) items.push({ path, fen: p.fen });
     }
     return shuffle(items);
 }

@@ -24,7 +24,10 @@ function useStatusLabel(): string {
   if (status.state === "syncing") return t("Settings.Sync.Status.Syncing");
   if (status.state === "error") return `${t("Settings.Sync.Failed")}: ${status.message ?? ""}`;
   if (!status.lastSync) return t("Settings.Sync.Status.Never");
-  return t("Settings.Sync.Status.Last", { date: new Date(status.lastSync).toLocaleString() });
+  return t("Settings.Sync.Status.Last", {
+    date: new Date(status.lastSync).toLocaleString(),
+    interpolation: { escapeValue: false },
+  });
 }
 
 export function SyncStatusText() {

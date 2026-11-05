@@ -157,6 +157,12 @@ describe("core", () => {
         expect(text.indexOf('"2"')).toBeLessThan(text.indexOf('"10"'));
         expect(parseProgress(text)).toEqual(games);
     });
+
+    test("serializeProgress does not depend on key order", () => {
+        const a = { "0": { positions: [], logs: [{ fen: "x", rating: 3, review: "r" }] } };
+        const b = { "0": { logs: [{ review: "r", rating: 3, fen: "x" }], positions: [] } };
+        expect(serializeProgress(a as never)).toBe(serializeProgress(b as never));
+    });
 });
 
 // ---------------------------------------------------------------------------

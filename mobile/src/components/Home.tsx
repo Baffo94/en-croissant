@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listRepertoires, type RepertoireEntry } from "../repertoires";
 import { useAppState } from "../state";
 import { syncNow, useSyncStatus } from "../sync";
@@ -31,7 +31,17 @@ export function Home({
   const pauses = useAppState((s) => s.pauses);
   const lastSync = useAppState((s) => s.manifest?.lastSync ?? null);
   const status = useSyncStatus();
-  const all = useMemo(() => listRepertoires({ files, decks, pauses }), [files, decks, pauses]);
+  // Recomputed every minute: positions answered wrongly become due again shortly.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const all = useMemo(
+    () => listRepertoires({ files, decks, pauses }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [files, decks, pauses, tick],
+  );
   const entries = all.filter((e) => !e.paused);
   const pausedEntries = all.filter((e) => e.paused);
 

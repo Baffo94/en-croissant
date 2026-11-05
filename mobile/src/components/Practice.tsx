@@ -8,6 +8,7 @@ import {
   formatReviewInterval,
   getNextReviewTimes,
   getStats,
+  isDue,
   type PracticeData,
   updateCardPerformance,
 } from "@/components/files/opening";
@@ -151,8 +152,7 @@ export function Practice({
     const now = new Date();
     const items: Item[] = [];
     for (const [key, deck] of Object.entries(all)) {
-      for (const p of deck.positions)
-        if (new Date(p.card.due) <= now) items.push({ key, fen: p.fen });
+      for (const p of deck.positions) if (isDue(p.card, now)) items.push({ key, fen: p.fen });
     }
     return mixed ? shuffle(items) : items;
   };

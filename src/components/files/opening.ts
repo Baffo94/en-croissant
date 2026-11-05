@@ -2,6 +2,7 @@ import type { SetStateAction } from "react";
 import {
     type Card,
     createEmptyCard,
+    State,
     fsrs,
     type Grade,
     generatorParameters,
@@ -67,6 +68,21 @@ type Stats = {
     total: number;
 };
 
+/**
+ * Positions answered wrongly come back after a few minutes (learning steps). Like
+ * Anki's "learn ahead limit", they count as due when that is less than this far
+ * away: otherwise a session ends with them pending and they turn up as due a few
+ * minutes later on every device, as if the review had not been synced.
+ */
+export const LEARN_AHEAD_MS = 20 * 60 * 1000;
+
+export function isDue(card: Card, now = new Date()): boolean {
+    const due = new Date(card.due).getTime();
+    if (due <= now.getTime()) return true;
+    const learning = card.state === State.Learning || card.state === State.Relearning;
+    return learning && due - now.getTime() <= LEARN_AHEAD_MS;
+}
+
 export function getStats(positions: Position[]) {
     const stats: Stats = {
         unseen: 0,
@@ -80,7 +96,7 @@ export function getStats(positions: Position[]) {
         const dueDate = new Date(card.card.due);
         if (card.card.reps === 0) {
             stats.unseen++;
-        } else if (dueDate <= now) {
+        } else if (isDue(card.card, now)) {
             stats.due++;
         } else {
             stats.practiced++;
@@ -101,9 +117,13 @@ export function getCardForReview(
     }
     const now = new Date();
 
-    const filtered = positions.filter((position) => new Date(position.card.due) <= now);
-
-    return filtered.length > 0 ? filtered[0] : null;
+    const overdue = positions.find((position) => new Date(position.card.due) <= now);
+    if (overdue) return overdue;
+    // Learning steps that are due shortly: earliest first.
+    const ahead = positions
+        .filter((position) => isDue(position.card, now))
+        .sort((a, b) => new Date(a.card.due).getTime() - new Date(b.card.due).getTime());
+    return ahead[0] ?? null;
 }
 
 export function updateCardPerformance(

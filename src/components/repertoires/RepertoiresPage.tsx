@@ -139,6 +139,15 @@ type CardStats = {
   reviews: number;
 };
 
+/** Re-renders every minute, so that positions becoming due show up without a refresh. */
+function useMinuteTick() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+}
+
 function cardStats(decks: Record<number, PracticeData>, fallbackTotal: number): CardStats {
   const all = Object.values(decks);
   const positions = all.flatMap((d) => d.positions);
@@ -196,8 +205,14 @@ function RepertoireCard({
       .fromNow();
   // Subscribing to game 0 re-renders the card when practice progress changes.
   useAtomValue(deckAtomFamily({ file: file.path, game: 0 }));
+  useMinuteTick();
   const { data: info } = useRepertoireInfo(file);
-  const stats = cardStats(decksOfFile(file.path), info?.positions ?? 0);
+  // Only the games that still exist in the PGN: decks left behind by deleted games
+  // would otherwise count positions that can never be practised.
+  const decks = Object.fromEntries(
+    Object.entries(decksOfFile(file.path)).filter(([game]) => Number(game) < (file.numGames || 1)),
+  );
+  const stats = cardStats(decks, info?.positions ?? 0);
   const paused = usePaused(file.path);
   const toDo = paused ? 0 : stats.due + stats.unseen;
   const pct = (n: number) => (stats.total > 0 ? (n / stats.total) * 100 : 0);
