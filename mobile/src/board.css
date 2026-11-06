@@ -46,16 +46,49 @@ cg-board square.check {
   font-weight: 600;
 }
 
-/* Alternating colours of the coordinate labels */
+/* Coordinate labels take the colour of the opposite square, so they read on the
+   square they sit in: ranks in the leftmost column, files in the bottom row. */
 .orientation-white .ranks :nth-child(odd),
-.orientation-white .files :nth-child(even),
+.orientation-white .files :nth-child(odd),
 .orientation-black .ranks :nth-child(even),
-.orientation-black .files :nth-child(odd) {
+.orientation-black .files :nth-child(even) {
   color: var(--coord-white);
 }
 .orientation-white .ranks :nth-child(even),
-.orientation-white .files :nth-child(odd),
+.orientation-white .files :nth-child(even),
 .orientation-black .ranks :nth-child(odd),
-.orientation-black .files :nth-child(even) {
+.orientation-black .files :nth-child(odd) {
   color: var(--coord-black);
+}
+
+/* Coordinates inside the board, in the corner of the edge squares (rank numbers
+   top-left, file letters bottom-right). Chessground's default places them for
+   lichess' layout, partly outside the board and shifted. */
+.cg-wrap coords {
+  font-size: 10px;
+  opacity: 1;
+}
+.cg-wrap coords.ranks {
+  left: 3px;
+  top: 0;
+  height: 100%;
+  width: 12px;
+}
+.cg-wrap coords.ranks coord {
+  flex: 1 1 0;
+  transform: none;
+  padding-top: 2px;
+}
+.cg-wrap coords.files {
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: auto;
+  text-transform: none;
+}
+.cg-wrap coords.files coord {
+  flex: 1 1 0;
+  text-align: right;
+  padding-right: 3px;
+  line-height: 1.4;
 }

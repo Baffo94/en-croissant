@@ -32,8 +32,28 @@ export function Board({ fen, orientation, lastMove, shapes, interactive, onMove 
 
   useEffect(() => {
     if (!el.current) return;
-    api.current = Chessground(el.current, { coordinates: true, animation: { duration: 200 } });
-    return () => api.current?.destroy();
+    const wrap = el.current;
+    api.current = Chessground(wrap, { coordinates: true, animation: { duration: 200 } });
+    // Chessground remembers where the board is and forgets it only on scroll or
+    // resize. When something above the board changes height (a banner, a line of
+    // text) the board moves without either, and touches land on the wrong square:
+    // measure it again at every touch, before chessground handles it.
+    const remeasure = () => {
+      const cg = api.current;
+      if (!cg) return;
+      cg.state.dom.bounds.clear();
+      // The board was laid out at another size (coordinates out of place too).
+      const outer = wrap.getBoundingClientRect();
+      const inner = cg.state.dom.elements.container.getBoundingClientRect();
+      if (Math.abs(outer.width - inner.width) > 8) setTimeout(() => api.current?.redrawAll(), 0);
+    };
+    wrap.addEventListener("touchstart", remeasure, { capture: true, passive: true });
+    wrap.addEventListener("mousedown", remeasure, { capture: true, passive: true });
+    return () => {
+      wrap.removeEventListener("touchstart", remeasure, { capture: true });
+      wrap.removeEventListener("mousedown", remeasure, { capture: true });
+      api.current?.destroy();
+    };
   }, []);
 
   useEffect(() => {
