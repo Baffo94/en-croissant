@@ -67,8 +67,9 @@ export function MoveToGroupModal({
   const [busy, setBusy] = useState(false);
 
   const currentDir = file ? dirName(file.path) : "";
-  // A group has a single colour: only groups of the same colour are offered.
-  const options = groups.filter((g) => g.orientation === orientation && g.dir !== currentDir);
+  const others = groups.filter((g) => g.dir !== currentDir);
+  // A group has a single colour: groups of the other colour are listed but disabled.
+  const options = others.filter((g) => g.orientation === orientation);
 
   useEffect(() => {
     if (!file) return;
@@ -120,7 +121,14 @@ export function MoveToGroupModal({
           onChange={(v) => v && setChoice(v)}
           allowDeselect={false}
           data={[
-            ...options.map((g) => ({ value: g.dir, label: g.name })),
+            ...others.map((g) => ({
+              value: g.dir,
+              label:
+                g.orientation === orientation
+                  ? g.name
+                  : `${g.name} (${t(g.orientation === "white" ? "Repertoires.OnlyWhite" : "Repertoires.OnlyBlack")})`,
+              disabled: g.orientation !== orientation,
+            })),
             { value: NEW, label: t("Repertoires.NewGroup") },
             ...(file?.group ? [{ value: NONE, label: t("Repertoires.NoGroup") }] : []),
           ]}

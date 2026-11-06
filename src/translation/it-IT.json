@@ -577,6 +577,8 @@
     "Repertoires.NextReview": "Prossimo ripasso {{when}}",
     "Repertoires.NoGroup": "Nessun gruppo (repertorio a sé)",
     "Repertoires.NoMatch": "Nessun repertorio corrisponde ai filtri.",
+    "Repertoires.OnlyBlack": "solo repertori col Nero",
+    "Repertoires.OnlyWhite": "solo repertori col Bianco",
     "Repertoires.Open": "Apri",
     "Repertoires.Pause": "Metti in pausa",
     "Repertoires.Paused": "In pausa",

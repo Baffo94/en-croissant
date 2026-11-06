@@ -580,6 +580,8 @@
     "Repertoires.NextReview": "Next review {{when}}",
     "Repertoires.NoGroup": "No group (stand-alone repertoire)",
     "Repertoires.NoMatch": "No repertoire matches the filters.",
+    "Repertoires.OnlyBlack": "black repertoires only",
+    "Repertoires.OnlyWhite": "white repertoires only",
     "Repertoires.Open": "Open",
     "Repertoires.Pause": "Pause",
     "Repertoires.Paused": "Paused",
