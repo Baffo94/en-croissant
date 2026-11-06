@@ -488,21 +488,39 @@ function PracticePanel() {
               </Alert>
             )}
             {sessionStats.mode === "mixed" && (
-              <Alert color="orange" icon={<IconTarget />} title={t("Board.Practice.TrainAll")}>
-                {t("Board.Practice.TrainAllQueue", {
-                  count: sessionStats.mixedQueue?.length ?? 0,
-                })}
+              <Alert
+                color="orange"
+                icon={<IconTarget />}
+                title={
+                  sessionStats.mixedGroup
+                    ? t("Board.Practice.TrainGroup", { group: sessionStats.mixedGroup })
+                    : t("Board.Practice.TrainAll")
+                }
+              >
+                {sessionStats.mixedGroup
+                  ? t("Board.Practice.TrainGroupQueue", {
+                      count: sessionStats.mixedQueue?.length ?? 0,
+                    })
+                  : t("Board.Practice.TrainAllQueue", {
+                      count: sessionStats.mixedQueue?.length ?? 0,
+                    })}
               </Alert>
             )}
             {sessionStats.mixedDone && practiceState.phase === "idle" && (
               <Alert
                 color="green"
                 icon={<IconCheck />}
-                title={t("Board.Practice.TrainAll")}
+                title={
+                  sessionStats.mixedGroup
+                    ? t("Board.Practice.TrainGroup", { group: sessionStats.mixedGroup })
+                    : t("Board.Practice.TrainAll")
+                }
                 withCloseButton
                 onClose={() => setSessionStats((prev) => ({ ...prev, mixedDone: false }))}
               >
-                {t("Board.Practice.TrainAllDone")}
+                {sessionStats.mixedGroup
+                  ? t("Board.Practice.TrainGroupDone")
+                  : t("Board.Practice.TrainAllDone")}
               </Alert>
             )}
             {syncMessage && (

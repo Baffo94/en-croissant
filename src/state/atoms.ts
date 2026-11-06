@@ -556,6 +556,8 @@ export type PracticeSessionStats = {
     remainingPositions: number[];
     mixedQueue?: MixedItem[];
     mixedFiles?: MixedFile[];
+    /** Group being trained, when the mixed session covers one variant group only. */
+    mixedGroup?: string;
     /** Set when a "Train all" session ran out of due positions. */
     mixedDone?: boolean;
     correct: number;

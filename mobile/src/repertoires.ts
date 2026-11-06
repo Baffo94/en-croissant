@@ -116,3 +116,59 @@ export function prepareDeck(
     }
     return { deck, pgn };
 }
+
+/** A folder of repertoires shown as one variant group (its files are the sections). */
+export type GroupEntry = {
+    folder: string;
+    name: string;
+    orientation: "white" | "black";
+    sections: RepertoireEntry[];
+    /** Sections not paused. */
+    active: RepertoireEntry[];
+    stats: { due: number; unseen: number; total: number };
+    /** Every section is paused. */
+    paused: boolean;
+};
+
+export type HomeItem =
+    | { kind: "entry"; entry: RepertoireEntry }
+    | { kind: "group"; group: GroupEntry };
+
+/**
+ * Repertoires at the top of the folder stay single items; those in a subfolder are
+ * collected into one group per folder. Sorted by name together.
+ */
+export function homeItems(entries: RepertoireEntry[]): HomeItem[] {
+    const groups = new Map<string, GroupEntry>();
+    const items: HomeItem[] = [];
+    for (const entry of entries) {
+        if (!entry.folder) {
+            items.push({ kind: "entry", entry });
+            continue;
+        }
+        let group = groups.get(entry.folder);
+        if (!group) {
+            group = {
+                folder: entry.folder,
+                name: entry.folder.slice(entry.folder.lastIndexOf("/") + 1),
+                orientation: entry.orientation,
+                sections: [],
+                active: [],
+                stats: { due: 0, unseen: 0, total: 0 },
+                paused: true,
+            };
+            groups.set(entry.folder, group);
+            items.push({ kind: "group", group });
+        }
+        group.sections.push(entry);
+        if (!entry.paused) {
+            group.active.push(entry);
+            group.paused = false;
+            group.stats.due += entry.stats.due;
+            group.stats.unseen += entry.stats.unseen;
+        }
+        group.stats.total += entry.stats.total;
+    }
+    const nameOf = (i: HomeItem) => (i.kind === "entry" ? i.entry.name : i.group.name);
+    return items.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+}

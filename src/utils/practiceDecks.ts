@@ -27,6 +27,11 @@ const pauseAtomFamily = atomFamily((normalizedPath: string) =>
     }),
 );
 
+/** Atom holding the pause state of a repertoire (to subscribe to several at once). */
+export function pauseAtomOf(path: string) {
+    return pauseAtomFamily(normalizePath(path));
+}
+
 export function getPause(path: string): PauseState | null {
     return getDefaultStore().get(pauseAtomFamily(normalizePath(path)));
 }

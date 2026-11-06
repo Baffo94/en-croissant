@@ -824,3 +824,47 @@ button.pause-toggle {
   font-size: 12px;
   padding: 6px 10px;
 }
+
+/* Variant groups on the home screen */
+.group-head .chevron {
+  display: inline-block;
+  width: 1em;
+  color: var(--dim);
+}
+
+.group.open .group-head {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.group-body {
+  background: var(--surface);
+  border-top: 1px solid var(--surface-2);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding: 6px 8px 10px 30px;
+}
+
+.list.sections {
+  padding: 0;
+}
+
+.list.sections li + li {
+  margin-top: 2px;
+}
+
+.item.section {
+  background: var(--surface-2);
+  padding: 10px 12px;
+}
+
+.item.is-paused {
+  opacity: 0.6;
+}
+
+.group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

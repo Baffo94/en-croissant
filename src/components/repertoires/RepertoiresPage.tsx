@@ -17,14 +17,20 @@ import {
   TextInput,
   Title,
   Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconArrowsSplit,
   IconBook,
+  IconChevronDown,
+  IconChevronUp,
   IconCloud,
   IconCloudCheck,
   IconDots,
+  IconFolder,
   IconFolderOpen,
+  IconFolderSymlink,
   IconPencil,
   IconPlayerPause,
   IconPlayerPlay,
@@ -39,8 +45,8 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import dayjs from "dayjs";
 import "dayjs/locale/it";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { atom, useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { commands } from "@/bindings";
@@ -66,9 +72,9 @@ import { parsePGN } from "@/utils/chess";
 import {
   decksOfFile,
   isRepertoirePaused,
+  pauseAtomOf,
   removeDecks,
   setPaused,
-  usePaused,
 } from "@/utils/practiceDecks";
 import {
   isConfigured,
@@ -82,13 +88,40 @@ import { normalizePath, relativePath } from "@/utils/sync/core";
 import { createTab } from "@/utils/tabs";
 import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
+import {
+  type GroupChoice,
+  MoveToGroupModal,
+  RenameGroupModal,
+  removeIfEmpty,
+  SplitModal,
+} from "./GroupModals";
+import {
+  type CardStats,
+  dirName,
+  emptyStats,
+  groupFiles,
+  groupOf,
+  type Listed,
+  sumStats,
+} from "./groups";
 
 dayjs.extend(relativeTime);
 
 /** Sync shortly after pausing/resuming, so the phone sees it. */
 const PAUSE_SYNC_DELAY = 5_000;
 
-type RepertoireFile = FileMetadata & { inSyncFolder: boolean; folder: string };
+type RepertoireFile = FileMetadata & {
+  inSyncFolder: boolean;
+  folder: string;
+  /** Repertoires folder the file belongs to (sync folder or documents). */
+  base: string;
+  /** Group (subfolder of `base`) the file is a section of; "" for none. */
+  group: string;
+};
+
+type Info = { orientation: "white" | "black"; positions: number };
+
+type FileState = { stats: CardStats; paused: boolean; toDo: number };
 
 function flatten(entries: (FileMetadata | Directory)[]): FileMetadata[] {
   return entries.flatMap((e) => (e.type === "directory" ? flatten(e.children) : [e]));
@@ -108,59 +141,46 @@ async function listRepertoires(documentDir: string, syncFolder: string | null) {
       seen.add(normalizePath(file.path));
       const rel = relativePath(root, file.path) ?? file.name;
       const folder = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-      files.push({
-        ...file,
-        folder,
-        inSyncFolder: syncFolder !== null && relativePath(syncFolder, file.path) !== null,
-      });
+      const inSyncFolder = syncFolder !== null && relativePath(syncFolder, file.path) !== null;
+      const base = inSyncFolder && syncFolder ? syncFolder : root;
+      files.push({ ...file, folder, inSyncFolder, base, group: groupOf(base, file.path) });
     }
   }
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Orientation and positions of the first game, parsed from the PGN. */
-function useRepertoireInfo(file: RepertoireFile) {
-  return useSWR(["repertoire-info", file.path, file.lastModified], async () => {
-    const pgn = unwrap(await commands.readGames(file.path, 0, 0))[0] ?? "";
-    const tree = await parsePGN(pgn);
-    const orientation = tree.headers.orientation === "black" ? "black" : "white";
-    const positions = buildFromTree(tree.root, orientation, tree.headers.start ?? []);
-    return { orientation, positions: positions.length } as const;
-  });
+/** Orientation and positions of the first game of each file, parsed from the PGN. */
+async function readInfos(files: RepertoireFile[]): Promise<Record<string, Info>> {
+  const result: Record<string, Info> = {};
+  for (const file of files) {
+    try {
+      const pgn = unwrap(await commands.readGames(file.path, 0, 0))[0] ?? "";
+      const tree = await parsePGN(pgn);
+      const orientation = tree.headers.orientation === "black" ? "black" : "white";
+      const positions = buildFromTree(tree.root, orientation, tree.headers.start ?? []);
+      result[file.path] = { orientation, positions: positions.length };
+    } catch {
+      result[file.path] = { orientation: "white", positions: 0 };
+    }
+  }
+  return result;
 }
 
-type CardStats = {
-  total: number;
-  due: number;
-  unseen: number;
-  learned: number;
-  nextDue: Date | null;
-  lastReview: Date | null;
-  reviews: number;
-};
-
-/** Re-renders every minute, so that positions becoming due show up without a refresh. */
+/** Changes every minute, so that positions becoming due show up without a refresh. */
 function useMinuteTick() {
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+  return tick;
 }
 
 function cardStats(decks: Record<number, PracticeData>, fallbackTotal: number): CardStats {
   const all = Object.values(decks);
   const positions = all.flatMap((d) => d.positions);
   if (positions.length === 0) {
-    return {
-      total: fallbackTotal,
-      due: 0,
-      unseen: fallbackTotal,
-      learned: 0,
-      nextDue: null,
-      lastReview: null,
-      reviews: 0,
-    };
+    return { ...emptyStats(), total: fallbackTotal, unseen: fallbackTotal };
   }
   const stats = getStats(
     positions,
@@ -186,56 +206,227 @@ function cardStats(decks: Record<number, PracticeData>, fallbackTotal: number): 
   };
 }
 
-function RepertoireCard({
-  file,
-  onOpen,
-  onRename,
-  onDelete,
-  onToDo,
-  onPauseChange,
-}: {
-  file: RepertoireFile;
-  onToDo: (path: string, count: number) => void;
-  onPauseChange: () => void;
-  onOpen: (file: RepertoireFile, practice: boolean) => void;
-  onRename: (file: RepertoireFile) => void;
-  onDelete: (file: RepertoireFile) => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const fromNow = (date: Date) =>
-    dayjs(date)
-      .locale(i18n.language?.slice(0, 2) === "it" ? "it" : "en")
-      .fromNow();
-  // Subscribing to game 0 re-renders the card when practice progress changes.
-  useAtomValue(deckAtomFamily({ file: file.path, game: 0 }));
-  useMinuteTick();
-  const { data: info } = useRepertoireInfo(file);
+function fileState(file: RepertoireFile, info: Info | undefined): FileState {
   // Only the games that still exist in the PGN: decks left behind by deleted games
   // would otherwise count positions that can never be practised.
   const decks = Object.fromEntries(
     Object.entries(decksOfFile(file.path)).filter(([game]) => Number(game) < (file.numGames || 1)),
   );
   const stats = cardStats(decks, info?.positions ?? 0);
-  const paused = usePaused(file.path);
-  const toDo = paused ? 0 : stats.due + stats.unseen;
+  const paused = isRepertoirePaused(file.path);
+  return { stats, paused, toDo: paused ? 0 : stats.due + stats.unseen };
+}
+
+function useFromNow() {
+  const { i18n } = useTranslation();
+  return (date: Date) =>
+    dayjs(date)
+      .locale(i18n.language?.slice(0, 2) === "it" ? "it" : "en")
+      .fromNow();
+}
+
+function ColorDot({ orientation, size = 18 }: { orientation?: "white" | "black"; size?: number }) {
+  return (
+    <Box
+      w={size}
+      h={size}
+      style={{
+        flexShrink: 0,
+        borderRadius: "50%",
+        border: "2px solid var(--mantine-color-gray-5)",
+        background: orientation === "black" ? "#000" : "#fff",
+      }}
+    />
+  );
+}
+
+/** Progress ring, badges and dates: shared by repertoire and group cards. */
+function StatsBody({ stats, paused, toDo }: FileState) {
+  const { t } = useTranslation();
+  const fromNow = useFromNow();
   const pct = (n: number) => (stats.total > 0 ? (n / stats.total) * 100 : 0);
   const mastery = Math.round(pct(stats.learned));
-  useEffect(() => onToDo(file.path, toDo), [file.path, toDo, onToDo]);
+  return (
+    <Group mt="md" wrap="nowrap" gap="md">
+      <RingProgress
+        size={84}
+        thickness={8}
+        roundCaps={stats.learned + stats.due > 0}
+        sections={[
+          {
+            value: pct(stats.learned),
+            color: "teal",
+            tooltip: t("Repertoires.Learned", { count: stats.learned }),
+          },
+          {
+            value: pct(stats.due),
+            color: "orange",
+            tooltip: t("Repertoires.Due", { count: stats.due }),
+          },
+        ]}
+        label={
+          <Text ta="center" size="sm" fw={700}>
+            {mastery}%
+          </Text>
+        }
+      />
+      <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+        <StatusBadges stats={stats} paused={paused} toDo={toDo} />
+        <Text size="xs" c="dimmed">
+          {t("Repertoires.Positions", { count: stats.total })}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {stats.lastReview
+            ? t("Repertoires.LastPractice", { when: fromNow(stats.lastReview) })
+            : t("Repertoires.NeverPracticed")}
+        </Text>
+        {!paused && toDo === 0 && stats.nextDue && (
+          <Text size="xs" c="dimmed">
+            {t("Repertoires.NextReview", { when: fromNow(stats.nextDue) })}
+          </Text>
+        )}
+      </Stack>
+    </Group>
+  );
+}
+
+function StatusBadges({ stats, paused, toDo, size }: FileState & { size?: "xs" | "sm" }) {
+  const { t } = useTranslation();
+  return (
+    <Group gap={6} wrap="nowrap">
+      {paused && (
+        <Badge
+          size={size}
+          color="gray"
+          variant="filled"
+          leftSection={<IconPlayerPause size="0.7rem" />}
+        >
+          {t("Repertoires.Paused")}
+        </Badge>
+      )}
+      {!paused && stats.due > 0 && (
+        <Badge size={size} color="orange" variant="light">
+          {t("Repertoires.Due", { count: stats.due })}
+        </Badge>
+      )}
+      {!paused && stats.unseen > 0 && (
+        <Badge size={size} color="blue" variant="light">
+          {t("Repertoires.NewPositions", { count: stats.unseen })}
+        </Badge>
+      )}
+      {!paused && toDo === 0 && stats.total > 0 && (
+        <Badge size={size} color="teal" variant="light">
+          {t("Repertoires.UpToDate")}
+        </Badge>
+      )}
+    </Group>
+  );
+}
+
+type FileActions = {
+  onOpen: (file: RepertoireFile, practice: boolean) => void;
+  onTogglePause: (file: RepertoireFile) => void;
+  onRename: (file: RepertoireFile) => void;
+  onMoveToGroup: (file: RepertoireFile) => void;
+  onSplit: (file: RepertoireFile) => void;
+  onDelete: (file: RepertoireFile) => void;
+};
+
+function showInFolder(path: string) {
+  openPath(path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))));
+}
+
+/** The "⋯" menu of a repertoire or of a section. */
+function FileMenu({
+  file,
+  paused,
+  actions,
+}: {
+  file: RepertoireFile;
+  paused: boolean;
+  actions: FileActions;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <ActionIcon variant="subtle" color="gray" aria-label={t("Repertoires.Actions")}>
+          <IconDots size="1rem" />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Item
+          leftSection={<IconBook size="1rem" />}
+          onClick={() => actions.onOpen(file, false)}
+        >
+          {t("Repertoires.Open")}
+        </Menu.Item>
+        <Menu.Item
+          leftSection={paused ? <IconPlayerPlay size="1rem" /> : <IconPlayerPause size="1rem" />}
+          onClick={() => actions.onTogglePause(file)}
+        >
+          {paused ? t("Repertoires.Resume") : t("Repertoires.Pause")}
+        </Menu.Item>
+        <Menu.Item leftSection={<IconPencil size="1rem" />} onClick={() => actions.onRename(file)}>
+          {t("Repertoires.Rename")}
+        </Menu.Item>
+        <Menu.Item
+          leftSection={<IconFolderSymlink size="1rem" />}
+          onClick={() => actions.onMoveToGroup(file)}
+        >
+          {t("Repertoires.MoveToGroup")}
+        </Menu.Item>
+        {file.numGames > 1 && (
+          <Menu.Item
+            leftSection={<IconArrowsSplit size="1rem" />}
+            onClick={() => actions.onSplit(file)}
+          >
+            {t("Repertoires.SplitSections")}
+          </Menu.Item>
+        )}
+        <Menu.Item
+          leftSection={<IconFolderOpen size="1rem" />}
+          onClick={() => showInFolder(file.path)}
+        >
+          {t("Repertoires.ShowInFolder")}
+        </Menu.Item>
+        <Menu.Divider />
+        <Menu.Item
+          color="red"
+          leftSection={<IconTrash size="1rem" />}
+          onClick={() => actions.onDelete(file)}
+        >
+          {t("Common.Delete")}
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+function RepertoireCard({
+  file,
+  info,
+  state,
+  actions,
+}: {
+  file: RepertoireFile;
+  info: Info | undefined;
+  state: FileState;
+  actions: FileActions;
+}) {
+  const { t } = useTranslation();
+  const { paused, toDo } = state;
 
   return (
-    <Card withBorder radius="md" padding="md" style={paused ? { opacity: 0.6 } : undefined}>
+    <Card
+      withBorder
+      radius="md"
+      padding="md"
+      style={{ alignSelf: "start", opacity: paused ? 0.6 : undefined }}
+    >
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-          <Box
-            w={18}
-            h={18}
-            style={{
-              flexShrink: 0,
-              borderRadius: "50%",
-              border: "2px solid var(--mantine-color-gray-5)",
-              background: info?.orientation === "black" ? "#000" : "#fff",
-            }}
-          />
+          <ColorDot orientation={info?.orientation} />
           <div style={{ minWidth: 0 }}>
             <Text fw={600} truncate>
               {file.name}
@@ -253,6 +444,196 @@ function RepertoireCard({
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
             </Tooltip>
           )}
+          <FileMenu file={file} paused={paused} actions={actions} />
+        </Group>
+      </Group>
+
+      <StatsBody {...state} />
+
+      <Group mt="md" grow>
+        <Button
+          leftSection={<IconTarget size="1rem" />}
+          variant={toDo > 0 ? "filled" : "light"}
+          onClick={() => actions.onOpen(file, true)}
+        >
+          {toDo > 0 ? t("Repertoires.Practice", { count: toDo }) : t("Repertoires.PracticeAnyway")}
+        </Button>
+        <Button
+          variant="default"
+          leftSection={<IconBook size="1rem" />}
+          onClick={() => actions.onOpen(file, false)}
+        >
+          {t("Repertoires.Open")}
+        </Button>
+      </Group>
+    </Card>
+  );
+}
+
+type GroupEntry = Extract<Listed<RepertoireFile>, { kind: "group" }>;
+
+type GroupActions = {
+  onTrain: (group: GroupEntry) => void;
+  onTogglePause: (group: GroupEntry, paused: boolean) => void;
+  onAddSection: (group: GroupEntry, orientation: "white" | "black") => void;
+  onRename: (group: GroupEntry) => void;
+  onDelete: (group: GroupEntry) => void;
+};
+
+const EXPANDED_KEY = "repertoire-groups-expanded";
+
+function useExpanded(key: string): [boolean, () => void] {
+  const read = () => {
+    try {
+      return (JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]).includes(key);
+    } catch {
+      return false;
+    }
+  };
+  const [expanded, setExpanded] = useState(read);
+  const toggle = () => {
+    setExpanded((prev) => {
+      try {
+        const list = (JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]).filter(
+          (k) => k !== key,
+        );
+        if (!prev) list.push(key);
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify(list));
+      } catch {
+        // Remembering the open groups is only a convenience.
+      }
+      return !prev;
+    });
+  };
+  return [expanded, toggle];
+}
+
+/** One section of a group, as a compact row inside the group card. */
+function SectionRow({
+  file,
+  state,
+  actions,
+}: {
+  file: RepertoireFile;
+  state: FileState;
+  actions: FileActions;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Group
+      wrap="nowrap"
+      justify="space-between"
+      gap="xs"
+      py={6}
+      px="xs"
+      style={{
+        borderRadius: "var(--mantine-radius-sm)",
+        background: "var(--mantine-color-default-hover)",
+        opacity: state.paused ? 0.6 : 1,
+      }}
+    >
+      <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+        <Text size="sm" fw={500} truncate>
+          {file.name}
+          {file.numGames > 1 && (
+            <Text span size="xs" c="dimmed">
+              {` · ${t("Repertoires.Games", { count: file.numGames })}`}
+            </Text>
+          )}
+        </Text>
+        <StatusBadges {...state} size="xs" />
+      </Stack>
+      <Group gap={2} wrap="nowrap">
+        <Tooltip
+          label={
+            state.toDo > 0
+              ? t("Repertoires.Practice", { count: state.toDo })
+              : t("Repertoires.PracticeAnyway")
+          }
+        >
+          <ActionIcon
+            variant={state.toDo > 0 ? "filled" : "subtle"}
+            color={state.toDo > 0 ? undefined : "gray"}
+            aria-label={t("Repertoires.Practice", { count: state.toDo })}
+            onClick={() => actions.onOpen(file, true)}
+          >
+            <IconTarget size="1rem" />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label={t("Repertoires.Open")}>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            aria-label={t("Repertoires.Open")}
+            onClick={() => actions.onOpen(file, false)}
+          >
+            <IconBook size="1rem" />
+          </ActionIcon>
+        </Tooltip>
+        <FileMenu file={file} paused={state.paused} actions={actions} />
+      </Group>
+    </Group>
+  );
+}
+
+function GroupCard({
+  group,
+  infos,
+  states,
+  fileActions,
+  actions,
+  training,
+}: {
+  group: GroupEntry;
+  infos: Record<string, Info> | undefined;
+  states: Record<string, FileState>;
+  fileActions: FileActions;
+  actions: GroupActions;
+  training: boolean;
+}) {
+  const { t } = useTranslation();
+  const [expanded, toggle] = useExpanded(group.key);
+  const sectionStates = group.files.map((f) => states[f.path]).filter(Boolean);
+  const allPaused = sectionStates.length > 0 && sectionStates.every((s) => s.paused);
+  const active = sectionStates.filter((s) => !s.paused);
+  // A paused group shows the progress of all its sections; otherwise only the active ones count.
+  const stats = sumStats((allPaused ? sectionStates : active).map((s) => s.stats));
+  const toDo = active.reduce((n, s) => n + s.toDo, 0);
+  const orientation = infos?.[group.files[0].path]?.orientation;
+  const synced = group.files.some((f) => f.inSyncFolder);
+
+  return (
+    <Card
+      withBorder
+      radius="md"
+      padding="md"
+      // Cards keep their own height: an open group does not stretch its neighbours.
+      style={{ alignSelf: "start", opacity: allPaused ? 0.6 : undefined }}
+    >
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <UnstyledButton onClick={toggle} style={{ minWidth: 0, flex: 1 }}>
+          <Group gap="sm" wrap="nowrap">
+            <ColorDot orientation={orientation} />
+            <div style={{ minWidth: 0 }}>
+              <Group gap={6} wrap="nowrap">
+                <IconFolder size="1rem" style={{ flexShrink: 0 }} />
+                <Text fw={600} truncate>
+                  {group.name}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed" truncate>
+                {orientation === "black" ? t("Common.BLACK") : t("Common.WHITE")}
+                {` · ${t("Repertoires.Sections", { count: group.files.length })}`}
+              </Text>
+            </div>
+          </Group>
+        </UnstyledButton>
+        <Group gap={4} wrap="nowrap">
+          {synced && (
+            <Tooltip label={t("Repertoires.Synced")}>
+              <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
+            </Tooltip>
+          )}
           <Menu position="bottom-end" withinPortal>
             <Menu.Target>
               <ActionIcon variant="subtle" color="gray" aria-label={t("Repertoires.Actions")}>
@@ -260,35 +641,36 @@ function RepertoireCard({
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconBook size="1rem" />} onClick={() => onOpen(file, false)}>
-                {t("Repertoires.Open")}
+              <Menu.Item
+                leftSection={<IconTarget size="1rem" />}
+                disabled={toDo === 0}
+                onClick={() => actions.onTrain(group)}
+              >
+                {t("Repertoires.TrainGroup")}
               </Menu.Item>
               <Menu.Item
                 leftSection={
-                  paused ? <IconPlayerPlay size="1rem" /> : <IconPlayerPause size="1rem" />
+                  allPaused ? <IconPlayerPlay size="1rem" /> : <IconPlayerPause size="1rem" />
                 }
-                onClick={() => {
-                  setPaused(file.path, !paused);
-                  // Let the other devices know (sync folder only).
-                  scheduleSync(PAUSE_SYNC_DELAY, file.path);
-                  onPauseChange();
-                }}
+                onClick={() => actions.onTogglePause(group, !allPaused)}
               >
-                {paused ? t("Repertoires.Resume") : t("Repertoires.Pause")}
+                {allPaused ? t("Repertoires.ResumeGroup") : t("Repertoires.PauseGroup")}
               </Menu.Item>
-              <Menu.Item leftSection={<IconPencil size="1rem" />} onClick={() => onRename(file)}>
-                {t("Repertoires.Rename")}
+              <Menu.Item
+                leftSection={<IconPlus size="1rem" />}
+                onClick={() => actions.onAddSection(group, orientation ?? "white")}
+              >
+                {t("Repertoires.AddSection")}
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconPencil size="1rem" />}
+                onClick={() => actions.onRename(group)}
+              >
+                {t("Repertoires.RenameGroup")}
               </Menu.Item>
               <Menu.Item
                 leftSection={<IconFolderOpen size="1rem" />}
-                onClick={() =>
-                  openPath(
-                    file.path.slice(
-                      0,
-                      Math.max(file.path.lastIndexOf("/"), file.path.lastIndexOf("\\")),
-                    ),
-                  )
-                }
+                onClick={() => openPath(group.dir)}
               >
                 {t("Repertoires.ShowInFolder")}
               </Menu.Item>
@@ -296,93 +678,58 @@ function RepertoireCard({
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size="1rem" />}
-                onClick={() => onDelete(file)}
+                onClick={() => actions.onDelete(group)}
               >
-                {t("Common.Delete")}
+                {t("Repertoires.DeleteGroup")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>
       </Group>
 
-      <Group mt="md" wrap="nowrap" gap="md">
-        <RingProgress
-          size={84}
-          thickness={8}
-          roundCaps={stats.learned + stats.due > 0}
-          sections={[
-            {
-              value: pct(stats.learned),
-              color: "teal",
-              tooltip: t("Repertoires.Learned", { count: stats.learned }),
-            },
-            {
-              value: pct(stats.due),
-              color: "orange",
-              tooltip: t("Repertoires.Due", { count: stats.due }),
-            },
-          ]}
-          label={
-            <Text ta="center" size="sm" fw={700}>
-              {mastery}%
-            </Text>
-          }
-        />
-        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-          <Group gap={6}>
-            {paused && (
-              <Badge color="gray" variant="filled" leftSection={<IconPlayerPause size="0.7rem" />}>
-                {t("Repertoires.Paused")}
-              </Badge>
-            )}
-            {!paused && stats.due > 0 && (
-              <Badge color="orange" variant="light">
-                {t("Repertoires.Due", { count: stats.due })}
-              </Badge>
-            )}
-            {!paused && stats.unseen > 0 && (
-              <Badge color="blue" variant="light">
-                {t("Repertoires.NewPositions", { count: stats.unseen })}
-              </Badge>
-            )}
-            {!paused && toDo === 0 && stats.total > 0 && (
-              <Badge color="teal" variant="light">
-                {t("Repertoires.UpToDate")}
-              </Badge>
-            )}
-          </Group>
-          <Text size="xs" c="dimmed">
-            {t("Repertoires.Positions", { count: stats.total })}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {stats.lastReview
-              ? t("Repertoires.LastPractice", { when: fromNow(stats.lastReview) })
-              : t("Repertoires.NeverPracticed")}
-          </Text>
-          {!paused && toDo === 0 && stats.nextDue && (
-            <Text size="xs" c="dimmed">
-              {t("Repertoires.NextReview", { when: fromNow(stats.nextDue) })}
-            </Text>
-          )}
-        </Stack>
-      </Group>
+      <StatsBody stats={stats} paused={allPaused} toDo={toDo} />
 
       <Group mt="md" grow>
         <Button
           leftSection={<IconTarget size="1rem" />}
           variant={toDo > 0 ? "filled" : "light"}
-          onClick={() => onOpen(file, true)}
+          disabled={allPaused}
+          loading={training}
+          onClick={() => actions.onTrain(group)}
         >
-          {toDo > 0 ? t("Repertoires.Practice", { count: toDo }) : t("Repertoires.PracticeAnyway")}
+          {toDo > 0 ? t("Repertoires.Practice", { count: toDo }) : t("Repertoires.TrainGroup")}
         </Button>
         <Button
           variant="default"
-          leftSection={<IconBook size="1rem" />}
-          onClick={() => onOpen(file, false)}
+          leftSection={expanded ? <IconChevronUp size="1rem" /> : <IconChevronDown size="1rem" />}
+          onClick={toggle}
         >
-          {t("Repertoires.Open")}
+          {expanded
+            ? t("Repertoires.HideSections")
+            : t("Repertoires.Sections", { count: group.files.length })}
         </Button>
       </Group>
+
+      {expanded && (
+        <Stack gap={6} mt="md">
+          {group.files.map((file) => (
+            <SectionRow
+              key={file.path}
+              file={file}
+              state={states[file.path] ?? fileState(file, infos?.[file.path])}
+              actions={fileActions}
+            />
+          ))}
+          <Button
+            variant="subtle"
+            size="xs"
+            leftSection={<IconPlus size="0.9rem" />}
+            onClick={() => actions.onAddSection(group, orientation ?? "white")}
+          >
+            {t("Repertoires.AddSection")}
+          </Button>
+        </Stack>
+      )}
     </Card>
   );
 }
@@ -395,13 +742,19 @@ export default function RepertoiresPage() {
   const syncEnabled = isConfigured(syncConfig);
   const [search, setSearch] = useState("");
   const [color, setColor] = useState<"all" | "white" | "black">("all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createDir, setCreateDir] = useState<string | undefined>(undefined);
+  const [create, setCreate] = useState<{
+    dir: string;
+    color?: "white" | "black";
+    title?: string;
+  } | null>(null);
   const [renaming, setRenaming] = useState<RepertoireFile | null>(null);
   const [deleting, setDeleting] = useState<RepertoireFile | null>(null);
-  const [startingTrainAll, setStartingTrainAll] = useState(false);
-  // Bumped when a repertoire is paused/resumed, to re-sort the list.
-  const [pauseVersion, setPauseVersion] = useState(0);
+  const [moving, setMoving] = useState<RepertoireFile | null>(null);
+  const [splitting, setSplitting] = useState<RepertoireFile | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
+  /** "all" for Train all, a group key for a group, null when nothing is starting. */
+  const [startingTrain, setStartingTrain] = useState<string | null>(null);
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
@@ -419,25 +772,31 @@ export default function RepertoiresPage() {
     listRepertoires(documentDir, syncFolder ?? null),
   );
 
-  // Orientation is needed to filter by colour; the cards share the SWR cache.
-  const { data: orientations } = useSWR(
-    files
-      ? ["repertoire-orientations", files.map((f) => `${f.path}:${f.lastModified}`).join("|")]
-      : null,
-    async () => {
-      const result: Record<string, "white" | "black"> = {};
-      for (const file of files ?? []) {
-        try {
-          const pgn = unwrap(await commands.readGames(file.path, 0, 0))[0] ?? "";
-          const match = /\[Orientation "(white|black)"\]/.exec(pgn);
-          result[file.path] = match?.[1] === "black" ? "black" : "white";
-        } catch {
-          result[file.path] = "white";
-        }
-      }
-      return result;
-    },
+  const { data: infos } = useSWR(
+    files ? ["repertoire-infos", files.map((f) => `${f.path}:${f.lastModified}`).join("|")] : null,
+    () => readInfos(files ?? []),
   );
+
+  // Re-render when practice progress or pauses change (here, in a tab or by a sync).
+  const watched = useMemo(
+    () =>
+      atom((get) => [
+        ...(files ?? []).map((f) => get(deckAtomFamily({ file: f.path, game: 0 }))),
+        ...(files ?? []).map((f) => get(pauseAtomOf(f.path))),
+      ]),
+    [files],
+  );
+  const watchedValues = useAtomValue(watched);
+  const tick = useMinuteTick();
+
+  const states = useMemo(() => {
+    const result: Record<string, FileState> = {};
+    for (const file of files ?? []) result[file.path] = fileState(file, infos?.[file.path]);
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, infos, watchedValues, tick]);
+
+  const orientationOf = (file: RepertoireFile) => infos?.[file.path]?.orientation ?? "white";
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -446,26 +805,29 @@ export default function RepertoiresPage() {
         (!query ||
           f.name.toLowerCase().includes(query) ||
           f.folder.toLowerCase().includes(query)) &&
-        (color === "all" || (orientations?.[f.path] ?? "white") === color),
+        (color === "all" || orientationOf(f) === color),
     );
-    // Paused repertoires go to the end of the list.
-    return [...list].sort(
-      (a, b) => Number(isRepertoirePaused(a.path)) - Number(isRepertoirePaused(b.path)),
-    );
+    const isPaused = (l: Listed<RepertoireFile>) =>
+      l.kind === "file"
+        ? (states[l.file.path]?.paused ?? false)
+        : l.files.every((f) => states[f.path]?.paused);
+    // Paused repertoires and groups go to the end of the list.
+    return groupFiles(list).sort((a, b) => Number(isPaused(a)) - Number(isPaused(b)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files, search, color, orientations, pauseVersion]);
+  }, [files, search, color, infos, states]);
 
-  // Each card reports how many positions it has to practice (it knows the PGN).
-  const [toDoByFile, setToDoByFile] = useState<Record<string, number>>({});
-  const reportToDo = useCallback((path: string, count: number) => {
-    setToDoByFile((prev) => (prev[path] === count ? prev : { ...prev, [path]: count }));
-  }, []);
-  const totals = useMemo(() => {
-    const paths = new Set((files ?? []).map((f) => f.path));
-    let toDo = 0;
-    for (const [path, count] of Object.entries(toDoByFile)) if (paths.has(path)) toDo += count;
-    return { toDo };
-  }, [files, toDoByFile]);
+  const groups: GroupChoice[] = useMemo(
+    () =>
+      groupFiles(files ?? []).flatMap((l) =>
+        l.kind === "group"
+          ? [{ name: l.name, dir: l.dir, orientation: orientationOf(l.files[0]) }]
+          : [],
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [files, infos],
+  );
+
+  const totalToDo = Object.values(states).reduce((n, s) => n + s.toDo, 0);
 
   async function openRepertoire(file: RepertoireFile, practice: boolean) {
     const [pgnResult, countResult] = await Promise.all([
@@ -490,16 +852,16 @@ export default function RepertoiresPage() {
     return tabId;
   }
 
-  /** Opens a practice tab that goes through the due positions of every repertoire. */
-  async function startTrainAll() {
-    if (!files || files.length === 0) return;
-    setStartingTrainAll(true);
+  /** Opens a practice tab that mixes the due positions of the given repertoires. */
+  async function startMixed(list: RepertoireFile[], key: string, group?: string) {
+    if (list.length === 0) return;
+    setStartingTrain(key);
     try {
-      const mixedFiles = files
+      const mixedFiles = list
         .filter((f) => !isRepertoirePaused(f.path))
         .map((f) => ({ path: f.path, name: f.name }));
       const queue = await prepareMixedSession(mixedFiles);
-      const first = queue[0] && files.find((f) => f.path === queue[0].path);
+      const first = queue[0] && list.find((f) => f.path === queue[0].path);
       if (!first) {
         notifications.show({
           color: "green",
@@ -514,6 +876,7 @@ export default function RepertoiresPage() {
         remainingPositions: [],
         mixedQueue: queue,
         mixedFiles,
+        mixedGroup: group,
         mixedDone: false,
         correct: 0,
         incorrect: 0,
@@ -521,7 +884,7 @@ export default function RepertoiresPage() {
         bestStreak: 0,
       });
     } finally {
-      setStartingTrainAll(false);
+      setStartingTrain(null);
     }
   }
 
@@ -531,22 +894,72 @@ export default function RepertoiresPage() {
       if (!(await exists(syncFolder))) await mkdir(syncFolder, { recursive: true });
       dir = syncFolder;
     }
-    setCreateDir(dir);
-    setCreateOpen(true);
+    setCreate({ dir });
+  }
+
+  function togglePause(file: RepertoireFile) {
+    setPaused(file.path, !isRepertoirePaused(file.path));
+    // Let the other devices know (sync folder only).
+    scheduleSync(PAUSE_SYNC_DELAY, file.path);
+  }
+
+  function toggleGroupPause(group: GroupEntry, paused: boolean) {
+    for (const file of group.files) {
+      if (isRepertoirePaused(file.path) !== paused) setPaused(file.path, paused);
+    }
+    scheduleSync(PAUSE_SYNC_DELAY, group.files[0].path);
+  }
+
+  async function deleteFile(file: RepertoireFile) {
+    await remove(file.path);
+    const info = file.path.replace(/\.pgn$/i, ".info");
+    if (await exists(info)) await remove(info);
+    removeDecks(file.path);
   }
 
   async function confirmDelete(file: RepertoireFile) {
     try {
-      await remove(file.path);
-      const info = file.path.replace(/\.pgn$/i, ".info");
-      if (await exists(info)) await remove(info);
-      removeDecks(file.path);
+      await deleteFile(file);
+      if (file.group) await removeIfEmpty(dirName(file.path), file.base);
     } catch (e) {
       notifications.show({ color: "red", title: t("Common.Error"), message: String(e) });
     }
     setDeleting(null);
     mutate();
   }
+
+  async function confirmDeleteGroup(group: GroupEntry) {
+    try {
+      for (const file of group.files) await deleteFile(file);
+      await removeIfEmpty(group.dir, group.files[0].base);
+    } catch (e) {
+      notifications.show({ color: "red", title: t("Common.Error"), message: String(e) });
+    }
+    setDeletingGroup(null);
+    mutate();
+  }
+
+  const fileActions: FileActions = {
+    onOpen: openRepertoire,
+    onTogglePause: togglePause,
+    onRename: setRenaming,
+    onMoveToGroup: setMoving,
+    onSplit: setSplitting,
+    onDelete: setDeleting,
+  };
+
+  const groupActions: GroupActions = {
+    onTrain: (group) => startMixed(group.files, group.key, group.name),
+    onTogglePause: toggleGroupPause,
+    onAddSection: (group, orientation) =>
+      setCreate({
+        dir: group.dir,
+        color: orientation,
+        title: t("Repertoires.AddSectionTitle", { group: group.name }),
+      }),
+    onRename: setRenamingGroup,
+    onDelete: setDeletingGroup,
+  };
 
   return (
     <Stack h="100%" gap={0}>
@@ -555,8 +968,8 @@ export default function RepertoiresPage() {
           <Title order={2}>{t("Repertoires.Title")}</Title>
           <Text c="dimmed" size="sm">
             {files && files.length > 0
-              ? totals.toDo > 0
-                ? t("Repertoires.Summary", { count: totals.toDo })
+              ? totalToDo > 0
+                ? t("Repertoires.Summary", { count: totalToDo })
                 : t("Repertoires.AllDone")
               : t("Repertoires.Subtitle")}
           </Text>
@@ -594,14 +1007,14 @@ export default function RepertoiresPage() {
               </Button>
             </Group>
           )}
-          {totals.toDo > 0 && (
+          {totalToDo > 0 && (
             <Button
               color="orange"
               leftSection={<IconTarget size="1rem" />}
-              loading={startingTrainAll}
-              onClick={startTrainAll}
+              loading={startingTrain === "all"}
+              onClick={() => startMixed(files ?? [], "all")}
             >
-              {t("Repertoires.TrainAll", { count: totals.toDo })}
+              {t("Repertoires.TrainAll", { count: totalToDo })}
             </Button>
           )}
           <Button leftSection={<IconPlus size="1rem" />} onClick={startCreate}>
@@ -650,25 +1063,39 @@ export default function RepertoiresPage() {
           </Center>
         ) : (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md">
-            {visible.map((file) => (
-              <RepertoireCard
-                key={file.path}
-                file={file}
-                onOpen={openRepertoire}
-                onRename={setRenaming}
-                onDelete={setDeleting}
-                onToDo={reportToDo}
-                onPauseChange={() => setPauseVersion((v) => v + 1)}
-              />
-            ))}
+            {visible.map((entry) =>
+              entry.kind === "file" ? (
+                <RepertoireCard
+                  key={entry.file.path}
+                  file={entry.file}
+                  info={infos?.[entry.file.path]}
+                  state={states[entry.file.path] ?? fileState(entry.file, undefined)}
+                  actions={fileActions}
+                />
+              ) : (
+                <GroupCard
+                  key={entry.key}
+                  group={entry}
+                  infos={infos}
+                  states={states}
+                  fileActions={fileActions}
+                  actions={groupActions}
+                  training={startingTrain === entry.key}
+                />
+              ),
+            )}
           </SimpleGrid>
         )}
       </ScrollArea>
 
       <CreateRepertoireModal
-        opened={createOpen}
-        setOpened={setCreateOpen}
-        dir={createDir}
+        opened={create !== null}
+        setOpened={(open) => {
+          if (!open) setCreate(null);
+        }}
+        dir={create?.dir}
+        fixedColor={create?.color}
+        title={create?.title}
         onCreated={() => mutate()}
       />
       {renaming && (
@@ -682,6 +1109,33 @@ export default function RepertoiresPage() {
           metadata={renaming}
         />
       )}
+      <MoveToGroupModal
+        file={moving}
+        orientation={moving ? orientationOf(moving) : "white"}
+        groups={groups}
+        onClose={() => setMoving(null)}
+        onDone={() => {
+          setMoving(null);
+          mutate();
+        }}
+      />
+      <SplitModal
+        file={splitting}
+        orientation={splitting ? orientationOf(splitting) : "white"}
+        onClose={() => setSplitting(null)}
+        onDone={() => {
+          setSplitting(null);
+          mutate();
+        }}
+      />
+      <RenameGroupModal
+        group={renamingGroup}
+        onClose={() => setRenamingGroup(null)}
+        onDone={() => {
+          setRenamingGroup(null);
+          mutate();
+        }}
+      />
       <ConfirmModal
         title={t("Repertoires.DeleteTitle", { name: deleting?.name ?? "" })}
         description={
@@ -690,6 +1144,13 @@ export default function RepertoiresPage() {
         opened={deleting !== null}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && confirmDelete(deleting)}
+      />
+      <ConfirmModal
+        title={t("Repertoires.DeleteGroupTitle", { name: deletingGroup?.name ?? "" })}
+        description={t("Repertoires.DeleteGroupDesc", { count: deletingGroup?.files.length ?? 0 })}
+        opened={deletingGroup !== null}
+        onClose={() => setDeletingGroup(null)}
+        onConfirm={() => deletingGroup && confirmDeleteGroup(deletingGroup)}
       />
     </Stack>
   );

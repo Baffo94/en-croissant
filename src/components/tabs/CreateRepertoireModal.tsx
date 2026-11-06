@@ -14,12 +14,17 @@ export default function CreateRepertoireModal({
   setOpened,
   dir,
   onCreated,
+  fixedColor,
+  title,
 }: {
   opened: boolean;
   setOpened: React.Dispatch<React.SetStateAction<boolean>>;
   /** Folder for the new file (defaults to the documents folder). */
   dir?: string;
   onCreated?: () => void;
+  /** Colour imposed by the caller (sections of a group share the group's colour). */
+  fixedColor?: "white" | "black";
+  title?: string;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
@@ -48,7 +53,7 @@ export default function CreateRepertoireModal({
       result: "*",
       event: trimmedName,
       site: "",
-      orientation: color,
+      orientation: fixedColor ?? color,
     });
 
     const result = await createFile({
@@ -98,7 +103,7 @@ export default function CreateRepertoireModal({
     <Modal
       opened={opened}
       onClose={() => setOpened(false)}
-      title={t("Home.Card.NewRepertoire.Title")}
+      title={title ?? t("Home.Card.NewRepertoire.Title")}
     >
       <form
         onSubmit={(e) => {
@@ -119,20 +124,22 @@ export default function CreateRepertoireModal({
             data-autofocus
           />
 
-          <div>
-            <Text size="sm" fw={500} mb={4}>
-              {t("Home.Card.NewRepertoire.Color")}
-            </Text>
-            <SegmentedControl
-              fullWidth
-              value={color}
-              onChange={(v) => setColor(v as "white" | "black")}
-              data={[
-                { label: t("Common.WHITE"), value: "white" },
-                { label: t("Common.BLACK"), value: "black" },
-              ]}
-            />
-          </div>
+          {!fixedColor && (
+            <div>
+              <Text size="sm" fw={500} mb={4}>
+                {t("Home.Card.NewRepertoire.Color")}
+              </Text>
+              <SegmentedControl
+                fullWidth
+                value={color}
+                onChange={(v) => setColor(v as "white" | "black")}
+                data={[
+                  { label: t("Common.WHITE"), value: "white" },
+                  { label: t("Common.BLACK"), value: "black" },
+                ]}
+              />
+            </div>
+          )}
 
           <Button type="submit">{t("Common.Create")}</Button>
         </Stack>

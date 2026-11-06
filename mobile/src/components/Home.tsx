@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { listRepertoires, type RepertoireEntry } from "../repertoires";
-import { useAppState } from "../state";
-import { syncNow, useSyncStatus } from "../sync";
+import { type GroupEntry, homeItems, listRepertoires, type RepertoireEntry } from "../repertoires";
+import { setRepertoirePaused, useAppState } from "../state";
+import { scheduleSync, syncNow, useSyncStatus } from "../sync";
 import { Header } from "./Practice";
+
+const PAUSE_SYNC_DELAY = 3_000;
+const EXPANDED_KEY = "home-groups-expanded";
 
 function SyncIndicator() {
   const status = useSyncStatus();
@@ -17,13 +20,146 @@ function SyncIndicator() {
   return <p className={`sync-status ${status.state}`}>{label}</p>;
 }
 
+/** Open groups, remembered between sessions (only a convenience). */
+function useExpandedGroups(): [Set<string>, (folder: string) => void] {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggle = (folder: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      try {
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  return [expanded, toggle];
+}
+
+function EntryItem({
+  entry,
+  onOpen,
+  section = false,
+}: {
+  entry: RepertoireEntry;
+  onOpen: (entry: RepertoireEntry) => void;
+  section?: boolean;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        className={`item${section ? " section" : ""}${entry.paused ? " is-paused" : ""}`}
+        onClick={() => onOpen(entry)}
+      >
+        {!section && <span className={`color-dot ${entry.orientation}`} />}
+        <span className="item-main">
+          <span className="item-name">{entry.name}</span>
+          {!section && entry.folder && <span className="item-folder">{entry.folder}</span>}
+        </span>
+        <span className="item-stats">
+          {entry.paused ? (
+            <span className="pill">⏸</span>
+          ) : (
+            <>
+              {entry.stats.due > 0 && <span className="pill due">{entry.stats.due}</span>}
+              {entry.stats.unseen > 0 && <span className="pill new">{entry.stats.unseen}</span>}
+            </>
+          )}
+          <span className="item-total">{entry.stats.total}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function GroupItem({
+  group,
+  expanded,
+  onToggle,
+  onOpen,
+  onTrain,
+}: {
+  group: GroupEntry;
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: (entry: RepertoireEntry) => void;
+  onTrain: (group: GroupEntry) => void;
+}) {
+  const toDo = group.stats.due + group.stats.unseen;
+  return (
+    <li className={`group${expanded ? " open" : ""}`}>
+      <button type="button" className="item group-head" onClick={onToggle}>
+        <span className={`color-dot ${group.orientation}`} />
+        <span className="item-main">
+          <span className="item-name">
+            <span className="chevron">{expanded ? "▾" : "▸"}</span> {group.name}
+          </span>
+          <span className="item-folder">
+            {group.sections.length === 1 ? "1 sezione" : `${group.sections.length} sezioni`}
+          </span>
+        </span>
+        <span className="item-stats">
+          {group.paused ? (
+            <span className="pill">⏸</span>
+          ) : (
+            <>
+              {group.stats.due > 0 && <span className="pill due">{group.stats.due}</span>}
+              {group.stats.unseen > 0 && <span className="pill new">{group.stats.unseen}</span>}
+            </>
+          )}
+          <span className="item-total">{group.stats.total}</span>
+        </span>
+      </button>
+      {expanded && (
+        <div className="group-body">
+          <ul className="list sections">
+            {group.sections.map((e) => (
+              <EntryItem key={`${e.rel}#${e.game}`} entry={e} onOpen={onOpen} section />
+            ))}
+          </ul>
+          <div className="group-actions">
+            {toDo > 0 && (
+              <button type="button" className="primary" onClick={() => onTrain(group)}>
+                Allena il gruppo ({toDo})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const pause = !group.paused;
+                for (const s of group.sections) {
+                  if (s.paused !== pause) setRepertoirePaused(s.rel, pause);
+                }
+                scheduleSync(PAUSE_SYNC_DELAY);
+              }}
+            >
+              {group.paused ? "▶ Riattiva il gruppo" : "⏸ Pausa gruppo"}
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function Home({
   onOpen,
   onTrainAll,
+  onTrainGroup,
   onSettings,
 }: {
   onOpen: (entry: RepertoireEntry) => void;
   onTrainAll: (entries: RepertoireEntry[]) => void;
+  onTrainGroup: (name: string, entries: RepertoireEntry[]) => void;
   onSettings: () => void;
 }) {
   const files = useAppState((s) => s.files);
@@ -31,6 +167,7 @@ export function Home({
   const pauses = useAppState((s) => s.pauses);
   const lastSync = useAppState((s) => s.manifest?.lastSync ?? null);
   const status = useSyncStatus();
+  const [expanded, toggle] = useExpandedGroups();
   // Recomputed every minute: positions answered wrongly become due again shortly.
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -43,7 +180,11 @@ export function Home({
     [files, decks, pauses, tick],
   );
   const entries = all.filter((e) => !e.paused);
-  const pausedEntries = all.filter((e) => e.paused);
+  const items = homeItems(all);
+  const isPaused = (i: (typeof items)[number]) =>
+    i.kind === "entry" ? i.entry.paused : i.group.paused;
+  const activeItems = items.filter((i) => !isPaused(i));
+  const pausedItems = items.filter(isPaused);
 
   const totals = entries.reduce(
     (t, e) => ({
@@ -54,6 +195,20 @@ export function Home({
     { due: 0, unseen: 0, positions: 0 },
   );
   const totalDue = totals.due + totals.unseen;
+
+  const renderItem = (item: (typeof items)[number]) =>
+    item.kind === "entry" ? (
+      <EntryItem key={`${item.entry.rel}#${item.entry.game}`} entry={item.entry} onOpen={onOpen} />
+    ) : (
+      <GroupItem
+        key={`group:${item.group.folder}`}
+        group={item.group}
+        expanded={expanded.has(item.group.folder)}
+        onToggle={() => toggle(item.group.folder)}
+        onOpen={onOpen}
+        onTrain={(g) => onTrainGroup(g.name, g.active)}
+      />
+    );
 
   return (
     <div className="screen">
@@ -98,48 +253,15 @@ export function Home({
               </button>
             )}
           </div>
-          <ul className="list">
-            {entries.map((e) => (
-              <li key={`${e.rel}#${e.game}`}>
-                <button type="button" className="item" onClick={() => onOpen(e)}>
-                  <span className={`color-dot ${e.orientation}`} />
-                  <span className="item-main">
-                    <span className="item-name">{e.name}</span>
-                    {e.folder && <span className="item-folder">{e.folder}</span>}
-                  </span>
-                  <span className="item-stats">
-                    {e.stats.due > 0 && <span className="pill due">{e.stats.due}</span>}
-                    {e.stats.unseen > 0 && <span className="pill new">{e.stats.unseen}</span>}
-                    <span className="item-total">{e.stats.total}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ul className="list">{activeItems.map(renderItem)}</ul>
           <p className="legend">
             Totale: <span className="pill due">{totals.due}</span> da ripassare ·{" "}
             <span className="pill new">{totals.unseen}</span> nuove · {totals.positions} posizioni
           </p>
-          {pausedEntries.length > 0 && (
+          {pausedItems.length > 0 && (
             <>
               <h2 className="section-title">In pausa</h2>
-              <ul className="list paused">
-                {pausedEntries.map((e) => (
-                  <li key={`${e.rel}#${e.game}`}>
-                    <button type="button" className="item" onClick={() => onOpen(e)}>
-                      <span className={`color-dot ${e.orientation}`} />
-                      <span className="item-main">
-                        <span className="item-name">{e.name}</span>
-                        {e.folder && <span className="item-folder">{e.folder}</span>}
-                      </span>
-                      <span className="item-stats">
-                        <span className="pill">⏸</span>
-                        <span className="item-total">{e.stats.total}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <ul className="list paused">{pausedItems.map(renderItem)}</ul>
             </>
           )}
         </>

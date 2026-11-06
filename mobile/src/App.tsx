@@ -82,6 +82,14 @@ export function App() {
           mixed: true,
         })
       }
+      onTrainGroup={(name, entries) =>
+        setScreen({
+          kind: "practice",
+          sources: entries.map((e) => ({ rel: e.rel, game: e.game, name: e.name })),
+          title: name,
+          mixed: true,
+        })
+      }
       onSettings={() => setScreen({ kind: "settings" })}
     />
   );
