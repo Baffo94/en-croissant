@@ -172,3 +172,8 @@ export function homeItems(entries: RepertoireEntry[]): HomeItem[] {
     const nameOf = (i: HomeItem) => (i.kind === "entry" ? i.entry.name : i.group.name);
     return items.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 }
+
+/** Name shown while practising: "Group · Section" for a section of a group. */
+export function practiceName(entry: { folder: string; name: string }): string {
+    return entry.folder ? `${entry.folder.split("/").pop()} · ${entry.name}` : entry.name;
+}

@@ -258,11 +258,13 @@ function PracticePanel() {
         commands.countPgnGames(path),
       ]);
       const tree = await parsePGN(unwrap(games)[0] ?? "");
-      const name = files.find((f) => f.path === path)?.name ?? path;
+      // Tab title: the label of the mixed session ("Group · Section"); file name: the PGN's.
+      const label = files.find((f) => f.path === path)?.name ?? path;
+      const name = (path.split(/[\\/]/).pop() ?? path).replace(/\.pgn$/i, "");
       setTreeState(tree);
       setCurrentTab((prev) => ({
         ...prev,
-        name,
+        name: label,
         gameOrigin: {
           kind: "file",
           gameNumber: 0,

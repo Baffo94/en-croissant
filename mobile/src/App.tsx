@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { handleBack } from "./back";
 import { Home } from "./components/Home";
 import { Practice, type PracticeSource } from "./components/Practice";
+import { practiceName } from "./repertoires";
 import { Settings } from "./components/Settings";
 import { flushState, getState, useAppState } from "./state";
 import { isConfigured, syncNow } from "./sync";
@@ -69,15 +70,15 @@ export function App() {
       onOpen={(entry) =>
         setScreen({
           kind: "practice",
-          sources: [{ rel: entry.rel, game: entry.game, name: entry.name }],
-          title: entry.name,
+          sources: [{ rel: entry.rel, game: entry.game, name: practiceName(entry) }],
+          title: practiceName(entry),
           mixed: false,
         })
       }
       onTrainAll={(entries) =>
         setScreen({
           kind: "practice",
-          sources: entries.map((e) => ({ rel: e.rel, game: e.game, name: e.name })),
+          sources: entries.map((e) => ({ rel: e.rel, game: e.game, name: practiceName(e) })),
           title: "Allena tutto",
           mixed: true,
         })

@@ -123,6 +123,11 @@ type Info = { orientation: "white" | "black"; positions: number };
 
 type FileState = { stats: CardStats; paused: boolean; toDo: number };
 
+/** Name shown while practising: "Group · Section" for a section of a group. */
+function practiceLabel(file: RepertoireFile): string {
+  return file.group ? `${file.group.split("/").pop()} · ${file.name}` : file.name;
+}
+
 function flatten(entries: (FileMetadata | Directory)[]): FileMetadata[] {
   return entries.flatMap((e) => (e.type === "directory" ? flatten(e.children) : [e]));
 }
@@ -836,7 +841,7 @@ export default function RepertoiresPage() {
     ]);
     const pgn = unwrap(pgnResult)[0] ?? "";
     const tabId = await createTab({
-      tab: { name: file.name, type: "analysis" },
+      tab: { name: practiceLabel(file), type: "analysis" },
       setTabs,
       setActiveTab,
       pgn,
@@ -859,7 +864,7 @@ export default function RepertoiresPage() {
     try {
       const mixedFiles = list
         .filter((f) => !isRepertoirePaused(f.path))
-        .map((f) => ({ path: f.path, name: f.name }));
+        .map((f) => ({ path: f.path, name: practiceLabel(f) }));
       const queue = await prepareMixedSession(mixedFiles);
       const first = queue[0] && list.find((f) => f.path === queue[0].path);
       if (!first) {
