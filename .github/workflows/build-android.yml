@@ -21,6 +21,9 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    # Publishing the APK as a GitHub release.
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,3 +88,24 @@ jobs:
           path: ${{ runner.temp }}/apk/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # Each build is published as a release "android-v0.1.<build>" marked as latest, so
+      # https://github.com/<repo>/releases/latest/download/EnCroissant-Repertorio.apk
+      # always downloads the newest APK (and Obtainium can follow the releases).
+      # Only the last 3 Android releases are kept.
+      - name: Publish release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: android-v0.1.${{ github.run_number }}
+        run: |
+          cp "$RUNNER_TEMP"/apk/*.apk "$RUNNER_TEMP/EnCroissant-Repertorio.apk"
+          gh release create "$TAG" "$RUNNER_TEMP/EnCroissant-Repertorio.apk" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "Android 0.1.${{ github.run_number }}" \
+            --notes "App Android, build ${{ github.run_number }} ($GITHUB_SHA)."
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("android-v"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+            while read -r old; do
+              gh release delete "$old" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            done

@@ -14,6 +14,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    # Publishing the installer as a GitHub release.
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,3 +56,19 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      # The installer is published in the release "windows" (replaced at every build), so
+      # https://github.com/<repo>/releases/download/windows/EnCroissant-Setup.exe
+      # always downloads the newest one. Not marked as latest: that link is Android's.
+      - name: Publish release
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp src-tauri/target/release/bundle/nsis/*.exe "$RUNNER_TEMP/EnCroissant-Setup.exe"
+          gh release delete windows --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create windows "$RUNNER_TEMP/EnCroissant-Setup.exe" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "Windows (ultima build)" \
+            --notes "Installer Windows, build ${{ github.run_number }} ($GITHUB_SHA)."
