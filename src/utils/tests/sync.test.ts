@@ -13,7 +13,13 @@ import {
     relativePath,
     serializeProgress,
 } from "../sync/core";
-import { ConcurrentPushError, emptyManifest, runSync, type SyncEnv } from "../sync/engine";
+import {
+    ConcurrentPushError,
+    emptyManifest,
+    retryConcurrent,
+    runSync,
+    type SyncEnv,
+} from "../sync/engine";
 import { GitHubClient, GitHubError, type NewTreeEntry, type TreeEntry } from "../sync/github";
 
 const enc = new TextEncoder();
@@ -237,7 +243,8 @@ class FakeClient {
     async createTree(base: string | null, entries: NewTreeEntry[]) {
         const tree = new Map(base ? this.repo.trees.get(base)! : []);
         for (const e of entries) {
-            if (e.sha === null) tree.delete(e.path);
+            if ("content" in e) tree.set(e.path, await this.repo.putBlob(enc.encode(e.content)));
+            else if (e.sha === null) tree.delete(e.path);
             else tree.set(e.path, e.sha);
         }
         const sha = `tree${this.repo.counter++}`;
@@ -433,6 +440,106 @@ describe("runSync", () => {
         expect(retry.summary.committed).toBe(true);
         expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
         expect(repo.text("race.txt")).toBeDefined();
+    });
+});
+
+/** Client that counts the requests and can answer the branch head from a stale cache. */
+function countingClient(repo: FakeRepo, staleHeads: (string | null)[] = []) {
+    const base = new FakeClient(repo);
+    const calls: string[] = [];
+    const wrapped = new Proxy(base, {
+        get(target, prop: string) {
+            const value = (target as unknown as Record<string, unknown>)[prop];
+            if (typeof value !== "function") return value;
+            return async (...args: unknown[]) => {
+                calls.push(prop);
+                if (prop === "getHead" && staleHeads.length > 0) return staleHeads.shift();
+                return (value as (...a: unknown[]) => unknown).apply(target, args);
+            };
+        },
+    });
+    return { client: wrapped as unknown as GitHubClient, calls };
+}
+
+describe("speed and reliability", () => {
+    test("a sync with nothing new costs a single request", async () => {
+        const repo = new FakeRepo();
+        const env = new MemoryEnv();
+        env.put("White.pgn", "1. e4 *");
+        env.setDeck("White.pgn", "0", {
+            positions: [{ fen: "A", answer: "e4", card: card("2026-10-01T10:00:00Z", 1) }],
+            logs: [log("A", "2026-10-01T10:00:00Z")],
+        });
+        const first = await runSync(env, client(repo), emptyManifest("k"));
+        const { client: c, calls } = countingClient(repo);
+        const second = await runSync(env, c, first.manifest);
+        expect(second.summary.committed).toBe(false);
+        expect(calls).toEqual(["getHead"]);
+    });
+
+    test("new progress is committed without blob requests", async () => {
+        const repo = new FakeRepo();
+        const env = new MemoryEnv();
+        env.put("White.pgn", "1. e4 *");
+        const first = await runSync(env, client(repo), emptyManifest("k"));
+        env.setDeck("White.pgn", "0", {
+            positions: [{ fen: "A", answer: "e4", card: card("2026-10-02T10:00:00Z", 1) }],
+            logs: [log("A", "2026-10-02T10:00:00Z")],
+        });
+        const { client: c, calls } = countingClient(repo);
+        const second = await runSync(env, c, first.manifest);
+        expect(calls).toEqual(["getHead", "createTree", "createCommit", "updateHead"]);
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe("A");
+        // And the next sync knows the remote state without asking.
+        const { client: c2, calls: calls2 } = countingClient(repo);
+        await runSync(env, c2, second.manifest);
+        expect(calls2).toEqual(["getHead"]);
+    });
+
+    test("a stale branch head (HTTP cache) is retried until the push goes through", async () => {
+        const repo = new FakeRepo();
+        const phone = new MemoryEnv();
+        phone.put("White.pgn", "1. e4 *");
+        const first = await runSync(phone, client(repo), emptyManifest("k"));
+        // Another device pushes; the phone keeps seeing the old head twice.
+        const oldHead = repo.head;
+        await repo.commitFiles({ "repertoires/Black.pgn": "1. e4 c5 *" });
+        phone.setDeck("White.pgn", "0", {
+            positions: [{ fen: "A", answer: "e4", card: card("2026-10-02T10:00:00Z", 1) }],
+            logs: [],
+        });
+        const { client: c } = countingClient(repo, [oldHead, oldHead]);
+        let manifest = first.manifest;
+        const retries: number[] = [];
+        const result = await retryConcurrent(
+            async () => {
+                const r = await runSync(phone, c, manifest);
+                manifest = r.manifest;
+                return r;
+            },
+            { delaysMs: [0, 0, 0, 0], onRetry: (n) => retries.push(n) },
+        );
+        expect(retries).toEqual([1, 2]);
+        expect(result.summary.committed).toBe(true);
+        expect(phone.text("Black.pgn")).toBe("1. e4 c5 *");
+        expect(repo.text("repertoires/Black.pgn")).toBe("1. e4 c5 *");
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe("A");
+    });
+
+    test("files with a byte order mark keep their exact bytes", async () => {
+        const raw = new TextDecoder("utf-8", { ignoreBOM: true });
+        const bytes = enc.encode("\uFEFF1. e4 *");
+        const repo = new FakeRepo();
+        const env = new MemoryEnv();
+        env.files.set("White.pgn", bytes);
+        const first = await runSync(env, client(repo), emptyManifest("k"));
+        const remote = repo.blobs.get(repo.files().get("repertoires/White.pgn")!)!;
+        expect(raw.decode(remote)).toBe("\uFEFF1. e4 *");
+        const second = await runSync(env, client(repo), first.manifest);
+        expect(second.summary.committed).toBe(false);
+        const pc2 = new MemoryEnv();
+        await runSync(pc2, client(repo), emptyManifest("k2"));
+        expect(raw.decode(pc2.files.get("White.pgn")!)).toBe("\uFEFF1. e4 *");
     });
 });
 

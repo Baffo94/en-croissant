@@ -20,7 +20,7 @@ import {
     relativePath,
 } from "./core";
 import {
-    ConcurrentPushError,
+    retryConcurrent,
     emptyManifest,
     runSync,
     type SyncEnv,
@@ -268,25 +268,22 @@ async function doSync(): Promise<SyncSummary | null> {
             deviceName = undefined;
         }
 
-        let result: Awaited<ReturnType<typeof runSync>> | null = null;
-        for (let attempt = 0; attempt < 3 && !result; attempt++) {
-            const previous = loadManifest();
-            const manifest = previous && previous.key === key ? previous : emptyManifest(key);
-            try {
-                result = await runSync(env, client, manifest, { deviceName });
-            } catch (e) {
-                if (!(e instanceof ConcurrentPushError) || attempt === 2) throw e;
-                warn("sync: repository changed during sync, retrying");
-            }
-        }
-        saveManifest(result!.manifest);
+        const result = await retryConcurrent(
+            () => {
+                const previous = loadManifest();
+                const manifest = previous && previous.key === key ? previous : emptyManifest(key);
+                return runSync(env, client, manifest, { deviceName });
+            },
+            { onRetry: (n) => warn(`sync: repository changed during sync, retry ${n}`) },
+        );
+        saveManifest(result.manifest);
         store.set(syncStatusAtom, {
             state: "success",
-            lastSync: result!.manifest.lastSync,
-            summary: result!.summary,
+            lastSync: result.manifest.lastSync,
+            summary: result.summary,
         });
-        info(`sync: done ${JSON.stringify(result!.summary)}`);
-        return result!.summary;
+        info(`sync: done ${JSON.stringify(result.summary)}`);
+        return result.summary;
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         warn(`sync: failed: ${message}`);

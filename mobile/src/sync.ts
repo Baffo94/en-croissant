@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
 import {
     emptyManifest,
-    ConcurrentPushError,
+    retryConcurrent,
     runSync,
     type SyncEnv,
     type SyncSummary,
@@ -136,21 +136,17 @@ async function doSync(): Promise<SyncSummary | null> {
         const parsed = parseRepository(config.repository)!;
         const key = `${parsed.owner}/${parsed.repo}#${config.branch.trim() || "main"}|mobile`;
         const client = createClient(config);
-        for (let attempt = 0; ; attempt++) {
+        const result = await retryConcurrent(() => {
             const previous = getState().manifest;
             const manifest = previous && previous.key === key ? previous : emptyManifest(key);
-            try {
-                const result = await runSync(memoryEnv, client, manifest, {
-                    deviceName: "Android",
-                    readOnlyContent: true,
-                });
-                updateState((s) => ({ ...s, manifest: result.manifest }));
-                setStatus({ state: "success", summary: result.summary });
-                return result.summary;
-            } catch (e) {
-                if (!(e instanceof ConcurrentPushError) || attempt >= 2) throw e;
-            }
-        }
+            return runSync(memoryEnv, client, manifest, {
+                deviceName: "Android",
+                readOnlyContent: true,
+            });
+        });
+        updateState((s) => ({ ...s, manifest: result.manifest }));
+        setStatus({ state: "success", summary: result.summary });
+        return result.summary;
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         setStatus({ ...status, state: "error", message });

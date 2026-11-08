@@ -17,13 +17,21 @@ export class GitHubError extends Error {
 
 export type TreeEntry = { path: string; sha: string; type: string; mode: string };
 
-export type NewTreeEntry = {
-    path: string;
-    mode: "100644";
-    type: "blob";
-    /** null deletes the file */
-    sha: string | null;
-};
+export type NewTreeEntry =
+    | {
+          path: string;
+          mode: "100644";
+          type: "blob";
+          /** null deletes the file */
+          sha: string | null;
+      }
+    | {
+          path: string;
+          mode: "100644";
+          type: "blob";
+          /** UTF-8 text of the file, stored without a separate blob request. */
+          content: string;
+      };
 
 const API = "https://api.github.com";
 
@@ -59,9 +67,20 @@ export class GitHubClient {
         return `${API}/repos/${encodeURIComponent(this.ref.owner)}/${encodeURIComponent(this.ref.repo)}`;
     }
 
-    private async request<T>(method: string, url: string, body?: unknown): Promise<T> {
+    /**
+     * `fresh`: never answer from the HTTP cache. GitHub marks API responses cacheable for
+     * 60 s, and a WebView honours that: a cached branch head made every sync within a
+     * minute of the previous one fail with "repository changed".
+     */
+    private async request<T>(
+        method: string,
+        url: string,
+        body?: unknown,
+        fresh = false,
+    ): Promise<T> {
         const res = await this.fetchImpl(url, {
             method,
+            ...(fresh ? { cache: "no-store" as RequestCache } : {}),
             headers: {
                 Accept: "application/vnd.github+json",
                 Authorization: `Bearer ${this.token}`,
@@ -91,7 +110,7 @@ export class GitHubClient {
         permissions?: { push?: boolean };
         default_branch: string;
     }> {
-        return this.request("GET", this.repoUrl);
+        return this.request("GET", this.repoUrl, undefined, true);
     }
 
     /** Commit sha at the head of the branch, or null if the branch (or the whole repo) is empty. */
@@ -100,6 +119,8 @@ export class GitHubClient {
             const data = await this.request<{ object: { sha: string } }>(
                 "GET",
                 `${this.repoUrl}/git/ref/heads/${encodePath(this.ref.branch)}`,
+                undefined,
+                true,
             );
             return data.object.sha;
         } catch (e) {

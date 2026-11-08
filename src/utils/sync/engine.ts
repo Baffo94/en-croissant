@@ -42,6 +42,8 @@ export type SyncManifest = {
     /** Identifies repo + branch + folder; the manifest is ignored if they change. */
     key: string;
     head: string | null;
+    /** Tree of `head`: when the branch has not moved, the remote state is known. */
+    tree?: string;
     /** Content files at the end of the last sync: relative path -> blob sha. */
     files: Record<string, string>;
     /** Progress files at the end of the last sync: remote path -> blob sha. */
@@ -81,12 +83,66 @@ function toReadOnly(action: ContentAction, remote: Map<string, string>): Content
     }
 }
 
+/**
+ * Runs `attempt` again when another device pushed in the middle of it, waiting a bit
+ * longer each time (the branch head GitHub reports can lag for a moment after a push).
+ */
+export async function retryConcurrent<T>(
+    attempt: () => Promise<T>,
+    options: { delaysMs?: number[]; onRetry?: (n: number) => void } = {},
+): Promise<T> {
+    const delays = options.delaysMs ?? [500, 1500, 3000, 6000];
+    for (let n = 0; ; n++) {
+        try {
+            return await attempt();
+        } catch (e) {
+            if (!(e instanceof ConcurrentPushError) || n >= delays.length) throw e;
+            options.onRetry?.(n + 1);
+            await new Promise((resolve) => setTimeout(resolve, delays[n]));
+        }
+    }
+}
+
 export function emptyManifest(key: string): SyncManifest {
     return { key, head: null, files: {}, progress: {}, lastSync: null };
 }
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/** Requests in flight at once when downloading several files. */
+const PARALLEL = 6;
+
+/** Runs `fn` over `items` with at most `limit` calls in flight. */
+async function mapLimit<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+        while (next < items.length) {
+            const i = next++;
+            results[i] = await fn(items[i]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
+}
+
+/** UTF-8 text of a file, or null unless it is valid UTF-8 that encodes back to the same bytes. */
+function asText(bytes: Uint8Array): string | null {
+    try {
+        const text = strictUtf8.decode(bytes);
+        const back = encoder.encode(text);
+        if (back.length !== bytes.length || back.some((b, i) => b !== bytes[i])) return null;
+        return text;
+    } catch {
+        return null;
+    }
+}
 
 export async function runSync(
     env: SyncEnv,
@@ -116,17 +172,23 @@ export async function runSync(
     // 1. Remote state
     let head = await client.getHead();
     if (head === null) head = await client.initBranch();
-    const baseTree = await client.getCommitTree(head);
-    const remoteEntries = await client.getTree(baseTree);
-
+    let baseTree: string;
     const remoteContent = new Map<string, string>();
     const remoteProgress = new Map<string, string>();
-    for (const entry of remoteEntries) {
-        if (entry.path.startsWith(REPERTOIRES_PREFIX)) {
-            const rel = entry.path.slice(REPERTOIRES_PREFIX.length);
-            if (isContentPath(rel)) remoteContent.set(rel, entry.sha);
-        } else if (entry.path.startsWith(PROGRESS_PREFIX) && entry.path.endsWith(".json")) {
-            remoteProgress.set(entry.path, entry.sha);
+    if (previous.tree && previous.head === head) {
+        // Nothing was pushed since our last sync: the remote is what we left there.
+        baseTree = previous.tree;
+        for (const [rel, sha] of Object.entries(previous.files)) remoteContent.set(rel, sha);
+        for (const [path, sha] of Object.entries(previous.progress)) remoteProgress.set(path, sha);
+    } else {
+        baseTree = await client.getCommitTree(head);
+        for (const entry of await client.getTree(baseTree)) {
+            if (entry.path.startsWith(REPERTOIRES_PREFIX)) {
+                const rel = entry.path.slice(REPERTOIRES_PREFIX.length);
+                if (isContentPath(rel)) remoteContent.set(rel, entry.sha);
+            } else if (entry.path.startsWith(PROGRESS_PREFIX) && entry.path.endsWith(".json")) {
+                remoteProgress.set(entry.path, entry.sha);
+            }
         }
     }
 
@@ -147,11 +209,33 @@ export async function runSync(
     const finalContent = new Map(localContent);
 
     const upload = async (rel: string, bytes: Uint8Array) => {
-        const sha = await client.createBlob(bytes);
-        entries.push({ path: REPERTOIRES_PREFIX + rel, mode: "100644", type: "blob", sha });
-        finalContent.set(rel, sha);
+        const path = REPERTOIRES_PREFIX + rel;
+        const text = asText(bytes);
+        // Text goes straight into the tree; only non-UTF-8 files need a blob request.
+        if (text !== null) {
+            entries.push({ path, mode: "100644", type: "blob", content: text });
+            finalContent.set(rel, await gitBlobSha(bytes));
+        } else {
+            const sha = await client.createBlob(bytes);
+            entries.push({ path, mode: "100644", type: "blob", sha });
+            finalContent.set(rel, sha);
+        }
         summary.uploaded++;
     };
+
+    // Remote files this sync needs, downloaded in parallel.
+    const fetched = new Map<string, Uint8Array>();
+    const prefetch = async (shas: (string | undefined)[]) => {
+        const missing = [...new Set(shas.filter((s): s is string => !!s && !fetched.has(s)))];
+        const blobs = await mapLimit(missing, PARALLEL, (sha) => client.getBlob(sha));
+        missing.forEach((sha, i) => fetched.set(sha, blobs[i]));
+    };
+    const blob = async (sha: string) => fetched.get(sha) ?? (await client.getBlob(sha));
+    await prefetch(
+        actions
+            .filter((a) => a.kind === "download" || a.kind === "conflict")
+            .map((a) => remoteContent.get(a.path)),
+    );
 
     // Renamed/moved repertoires keep their progress. Decks are moved before any file is
     // deleted; for local renames the old remote progress is merged into the new path.
@@ -168,7 +252,7 @@ export async function runSync(
         switch (action.kind) {
             case "download": {
                 const sha = remoteContent.get(rel)!;
-                await env.writeFile(rel, await client.getBlob(sha));
+                await env.writeFile(rel, await blob(sha));
                 finalContent.set(rel, sha);
                 summary.downloaded++;
                 break;
@@ -194,7 +278,7 @@ export async function runSync(
             case "conflict": {
                 // Keep our version under the original name, save theirs next to it.
                 const copy = conflictCopyPath(rel, now);
-                const theirs = await client.getBlob(remoteContent.get(rel)!);
+                const theirs = await blob(remoteContent.get(rel)!);
                 await env.writeFile(copy, theirs);
                 await upload(rel, localBytes.get(rel)!);
                 await upload(copy, theirs);
@@ -208,6 +292,13 @@ export async function runSync(
     const progressManifest: Record<string, string> = {};
     const pgnFiles = [...finalContent.keys()].filter((p) => p.toLowerCase().endsWith(".pgn"));
     const wantedProgress = new Set<string>();
+    const remoteShaOf = (relPgn: string) =>
+        remoteProgress.get(progressPathFor(relPgn)) ?? renamedProgress.get(relPgn);
+    await prefetch(
+        pgnFiles
+            .map(remoteShaOf)
+            .filter((sha, i) => sha !== previous.progress[progressPathFor(pgnFiles[i])]),
+    );
 
     for (const relPgn of pgnFiles) {
         const progressPath = progressPathFor(relPgn);
@@ -221,7 +312,7 @@ export async function runSync(
         let remotePause: PauseState | null = null;
         if (remoteSha && remoteSha !== previous.progress[progressPath]) {
             try {
-                const remote = parseProgressFile(decoder.decode(await client.getBlob(remoteSha)));
+                const remote = parseProgressFile(decoder.decode(await blob(remoteSha)));
                 remoteGames = remote.games;
                 remotePause = remote.pause;
             } catch {
@@ -253,11 +344,10 @@ export async function runSync(
             if (shaAtPath) progressManifest[progressPath] = shaAtPath;
             continue;
         }
-        const bytes = encoder.encode(serializeProgress(merged, pause));
-        let sha = await gitBlobSha(bytes);
+        const text = serializeProgress(merged, pause);
+        const sha = await gitBlobSha(encoder.encode(text));
         if (sha !== shaAtPath) {
-            sha = await client.createBlob(bytes);
-            entries.push({ path: progressPath, mode: "100644", type: "blob", sha });
+            entries.push({ path: progressPath, mode: "100644", type: "blob", content: text });
         }
         progressManifest[progressPath] = sha;
     }
@@ -271,8 +361,10 @@ export async function runSync(
 
     // 5. Commit
     let newHead = head;
+    let newTree = baseTree;
     if (entries.length > 0) {
         const tree = await client.createTree(baseTree, entries);
+        newTree = tree;
         const device = options.deviceName ? ` from ${options.deviceName}` : "";
         const commit = await client.createCommit(`Sync${device} ${now.toISOString()}`, tree, head);
         try {
@@ -289,6 +381,7 @@ export async function runSync(
         manifest: {
             key: previous.key,
             head: newHead,
+            tree: newTree,
             files: Object.fromEntries(finalContent),
             progress: progressManifest,
             lastSync: now.toISOString(),
