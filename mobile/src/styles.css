@@ -868,3 +868,93 @@ button.pause-toggle {
   gap: 8px;
   margin-top: 10px;
 }
+
+/* Notes on moves */
+.note-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 12px 12px;
+}
+
+.note-box {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.note-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.note-line {
+  margin: 0 0 10px;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.note-box textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.note-box .small {
+  color: var(--dim);
+  font-size: 0.8rem;
+  margin: 6px 0 10px;
+}
+
+.my-notes {
+  margin: 8px 12px 0;
+}
+
+.my-note {
+  background: var(--surface);
+  border-left: 3px solid var(--orange);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 6px;
+}
+
+.my-note p {
+  margin: 0;
+}
+
+.my-note-head {
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+
+.my-note-text {
+  margin-top: 4px !important;
+  white-space: pre-wrap;
+}
+
+.my-note-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.my-note-actions button {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
+.result .my-notes {
+  margin: 8px 0 0;
+}

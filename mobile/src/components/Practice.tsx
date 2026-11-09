@@ -18,15 +18,16 @@ import type { PgnGame } from "@/utils/pgnTree";
 import type { TreeNode } from "@/utils/treeReducer";
 import { findFen } from "@/utils/treeReducer";
 import { prepareDeck } from "../repertoires";
-import { setDeck, setRepertoirePaused, useAppState } from "../state";
+import { addNote, setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
 import { Board } from "./Board";
+import { NoteEditor, NotesHere } from "./NoteEditor";
 
 type Phase =
   | { kind: "waiting" }
   | { kind: "correct"; san: string; move: NormalMove }
-  | { kind: "incorrect"; played: string; answer: NormalMove | null };
+  | { kind: "incorrect"; played: string; playedFen: string; answer: NormalMove | null };
 
 const GRADES: { grade: 1 | 2 | 3 | 4; label: string; className: string }[] = [
   { grade: 1, label: "Di nuovo", className: "again" },
@@ -139,6 +140,7 @@ export function Practice({
   const [session, setSession] = useState({ correct: 0, incorrect: 0 });
   /** Ply shown while browsing the moves that led to the position (null = live). */
   const [viewPly, setViewPly] = useState<number | null>(null);
+  const [writingNote, setWritingNote] = useState(false);
   const [analysis, setAnalysis] = useState<{
     moves: string[];
     comments: string[];
@@ -162,6 +164,7 @@ export function Practice({
 
   const advance = (all: Record<string, PracticeData>, m: "due" | "all", rest: Item[]) => {
     setPhase({ kind: "waiting" });
+    setWritingNote(false);
     setViewPly(null);
     // In review mode, positions answered "again" come back once they are due.
     setQueue(rest.length > 0 || m === "all" ? rest : dueItems(all));
@@ -263,7 +266,13 @@ export function Practice({
       setSession((s) => ({ ...s, incorrect: s.incorrect + 1 }));
       // Same as the desktop app: a wrong move counts as "again".
       if (mode === "due") rate(1);
-      setPhase({ kind: "incorrect", played: san, answer: answerMove ?? null });
+      pos.play(move);
+      setPhase({
+        kind: "incorrect",
+        played: san,
+        playedFen: makeFen(pos.toSetup()),
+        answer: answerMove ?? null,
+      });
     }
   }
 
@@ -303,6 +312,7 @@ export function Practice({
         comments={analysis.comments}
         initialPly={analysis.ply}
         orientation={pgn.orientation}
+        noteTarget={{ rel: currentSource.source.rel, game: currentSource.source.game }}
         onBack={() => setAnalysis(null)}
       />
     );
@@ -526,6 +536,9 @@ export function Practice({
               <strong>{withSymbols(answerNode, position.answer)}</strong>.
             </p>
             <div className="buttons">
+              <button type="button" onClick={() => setWritingNote(true)}>
+                📝 Nota
+              </button>
               <button
                 type="button"
                 className="primary"
@@ -534,6 +547,24 @@ export function Practice({
                 Avanti
               </button>
             </div>
+            <NotesHere rel={currentSource.source.rel} fen={phase.playedFen} />
+            {writingNote && (
+              <NoteEditor
+                startFen={pgn.root.fen}
+                line={[...nodes.slice(1).map((n) => n.san ?? ""), phase.played]}
+                onCancel={() => setWritingNote(false)}
+                onSave={(text) => {
+                  addNote(currentSource.source.rel, {
+                    game: currentSource.source.game,
+                    startFen: pgn.root.fen,
+                    line: [...nodes.slice(1).map((n) => n.san ?? ""), phase.played],
+                    fen: phase.playedFen,
+                    text,
+                  });
+                  setWritingNote(false);
+                }}
+              />
+            )}
           </div>
         )}
 
