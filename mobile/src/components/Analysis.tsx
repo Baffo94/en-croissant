@@ -9,6 +9,7 @@ import { useBackHandler } from "../back";
 import { type Analysis as EngineAnalysis, Engine, formatScore, pvToSan, whiteBar } from "../engine";
 import { Board } from "./Board";
 import { ExplorerPanel } from "./ExplorerPanel";
+import { CommentItem } from "./CommentItem";
 import { Header } from "./Practice";
 
 type Ply = { san: string; uci: string; fen: string };
@@ -43,6 +44,7 @@ export function Analysis({
   comments = [],
   initialPly,
   orientation,
+  onEditComment,
   onBack,
 }: {
   startFen: string;
@@ -52,6 +54,8 @@ export function Analysis({
   comments?: string[];
   initialPly: number;
   orientation: "white" | "black";
+  /** Saves the comment of repertoire move number `ply` (1 = first move of `moves`). */
+  onEditComment?: (ply: number, text: string) => boolean;
   onBack: () => void;
 }) {
   useBackHandler(onBack);
@@ -242,13 +246,17 @@ export function Analysis({
         const fromRepertoire =
           i >= 0 && i < moves.length && history.slice(0, ply).every((p, j) => p.san === moves[j]);
         const note = fromRepertoire ? comments[i] : "";
-        return note ? (
+        if (!fromRepertoire || (!note && !onEditComment)) return null;
+        return (
           <div className="notes analysis-note">
-            <p>
-              <span className="notes-label">{history[i].san}</span> {note}
-            </p>
+            <CommentItem
+              key={`${ply}-${note}`}
+              label={history[i].san}
+              text={note}
+              onSave={onEditComment ? (text) => onEditComment(ply, text) : undefined}
+            />
           </div>
-        ) : null;
+        );
       })()}
 
       <div className="tabs">

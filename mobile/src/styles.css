@@ -868,3 +868,47 @@ button.pause-toggle {
   gap: 8px;
   margin-top: 10px;
 }
+
+/* Editing the comment of a move */
+.comment-edit-btn {
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.85rem;
+  background: none;
+  border: none;
+  opacity: 0.8;
+}
+
+.comment-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comment-edit textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.comment-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.comment-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.notes .dim {
+  color: var(--dim);
+  font-style: italic;
+}

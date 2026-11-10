@@ -70,9 +70,18 @@ export class ConcurrentPushError extends Error {
 }
 
 /** Rewrites an action so that the remote repository is the only source of truth. */
-function toReadOnly(action: ContentAction, remote: Map<string, string>): ContentAction {
+function toReadOnly(
+    action: ContentAction,
+    remote: Map<string, string>,
+    writable: (rel: string) => boolean,
+): ContentAction {
     switch (action.kind) {
         case "upload":
+            // A file edited here (comments) goes up when nobody else changed it meanwhile.
+            if (writable(action.path) && remote.has(action.path)) return action;
+            return remote.has(action.path)
+                ? { kind: "download", path: action.path }
+                : { kind: "deleteLocal", path: action.path };
         case "conflict":
         case "deleteRemote":
             return remote.has(action.path)
@@ -156,6 +165,12 @@ export async function runSync(
          * content files always wins and nothing but progress is uploaded.
          */
         readOnlyContent?: boolean;
+        /**
+         * With readOnlyContent: files this device edited, uploaded if the remote copy
+         * did not change since the last sync (otherwise the remote copy still wins and
+         * the device applies its edits again on top of it).
+         */
+        writable?: (rel: string) => boolean;
     } = {},
 ): Promise<{ manifest: SyncManifest; summary: SyncSummary }> {
     const now = options.now ?? new Date();
@@ -204,7 +219,10 @@ export async function runSync(
     // 3. Content files
     const base = new Map(Object.entries(previous.files));
     let actions: ContentAction[] = planContentSync(localContent, remoteContent, base);
-    if (options.readOnlyContent) actions = actions.map((a) => toReadOnly(a, remoteContent));
+    if (options.readOnlyContent) {
+        const writable = options.writable ?? (() => false);
+        actions = actions.map((a) => toReadOnly(a, remoteContent, writable));
+    }
     const entries: NewTreeEntry[] = [];
     const finalContent = new Map(localContent);
 

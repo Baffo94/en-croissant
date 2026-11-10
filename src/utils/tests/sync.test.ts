@@ -20,6 +20,7 @@ import {
     runSync,
     type SyncEnv,
 } from "../sync/engine";
+import { setMoveComment } from "../pgnEdit";
 import { GitHubClient, GitHubError, type NewTreeEntry, type TreeEntry } from "../sync/github";
 
 const enc = new TextEncoder();
@@ -540,6 +541,77 @@ describe("speed and reliability", () => {
         const pc2 = new MemoryEnv();
         await runSync(pc2, client(repo), emptyManifest("k2"));
         expect(raw.decode(pc2.files.get("White.pgn")!)).toBe("\uFEFF1. e4 *");
+    });
+});
+
+describe("comments edited on the phone", () => {
+    const PGN = "1. e4 e5 2. Nf3 *";
+    test("an edited PGN goes up from the phone and reaches the PC", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", PGN);
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+        const phone = new MemoryEnv();
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("ph"), {
+            readOnlyContent: true,
+        });
+        phone.put("White.pgn", setMoveComment(PGN, 0, ["e4", "e5", "Nf3"], "Sviluppo")!);
+        const writable = (rel: string) => rel === "White.pgn";
+        const second = await runSync(phone, client(repo), phoneFirst.manifest, {
+            readOnlyContent: true,
+            writable,
+        });
+        expect(second.summary.uploaded).toBe(1);
+        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 e5 2. Nf3 {Sviluppo} *");
+        await runSync(pc, client(repo), pcFirst.manifest);
+        expect(pc.text("White.pgn")).toBe("1. e4 e5 2. Nf3 {Sviluppo} *");
+    });
+
+    test("not writable: the phone's copy is replaced as before", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", PGN);
+        await runSync(pc, client(repo), emptyManifest("pc"));
+        const phone = new MemoryEnv();
+        const first = await runSync(phone, client(repo), emptyManifest("ph"), {
+            readOnlyContent: true,
+        });
+        phone.put("White.pgn", "garbage");
+        await runSync(phone, client(repo), first.manifest, { readOnlyContent: true });
+        expect(phone.text("White.pgn")).toBe(PGN);
+        expect(repo.text("repertoires/White.pgn")).toBe(PGN);
+    });
+
+    test("the PC changed the file meanwhile: the PC's version wins, then the comment is applied on top", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", PGN);
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+        const phone = new MemoryEnv();
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("ph"), {
+            readOnlyContent: true,
+        });
+        // PC adds a variation, phone comments e5: both before syncing.
+        pc.put("White.pgn", "1. e4 e5 (1... c5 2. Nf3) 2. Nf3 *");
+        await runSync(pc, client(repo), pcFirst.manifest);
+        const edit = { game: 0, line: ["e4", "e5"], text: "Simmetrica" };
+        phone.put("White.pgn", setMoveComment(PGN, edit.game, edit.line, edit.text)!);
+        const writable = () => true;
+        const second = await runSync(phone, client(repo), phoneFirst.manifest, {
+            readOnlyContent: true,
+            writable,
+        });
+        // Remote wins: nothing of the PC's work is lost.
+        expect(phone.text("White.pgn")).toBe("1. e4 e5 (1... c5 2. Nf3) 2. Nf3 *");
+        // The phone applies its edit again (mobile/src/comments.ts) and syncs.
+        phone.put(
+            "White.pgn",
+            setMoveComment(phone.text("White.pgn")!, edit.game, edit.line, edit.text)!,
+        );
+        await runSync(phone, client(repo), second.manifest, { readOnlyContent: true, writable });
+        expect(repo.text("repertoires/White.pgn")).toBe(
+            "1. e4 e5 {Simmetrica} (1... c5 2. Nf3) 2. Nf3 *",
+        );
     });
 });
 

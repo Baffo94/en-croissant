@@ -16,6 +16,8 @@ export type Config = {
     branch: string;
 };
 
+export type CommentEdit = { game: number; line: string[]; text: string };
+
 export type AppState = {
     version: 1;
     config: Config;
@@ -26,6 +28,12 @@ export type AppState = {
     manifest: SyncManifest | null;
     appearance: { board: string; pieces: string };
     explorer: ExplorerSettings;
+    /**
+     * relPgn -> comments edited on the phone and not yet confirmed on GitHub. Kept
+     * until the uploaded PGN contains them, so they can be applied again on top of
+     * a version changed meanwhile on the PC.
+     */
+    commentEdits?: Record<string, CommentEdit[]>;
     /** relPgn -> pause state (synced through the progress files). */
     pauses: Record<string, PauseState>;
 };

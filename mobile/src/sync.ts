@@ -1,5 +1,6 @@
 // Mobile side of the GitHub sync: same engine as the desktop app, but repertoires are
-// read-only here (only practice progress is uploaded).
+// read-only here: only practice progress and the PGNs whose comments were edited on
+// the phone are uploaded.
 
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
@@ -12,6 +13,8 @@ import {
 } from "@/utils/sync/engine";
 import { emptyDeck, mergeDecks } from "@/utils/sync/core";
 import { GitHubClient } from "@/utils/sync/github";
+import { gitBlobSha } from "@/utils/sync/core";
+import { pendingFiles, settleEdits } from "./comments";
 import { decodeBase64, encodeBase64, getState, updateState, type Config } from "./state";
 
 export function parseRepository(value: string): { owner: string; repo: string } | null {
@@ -36,6 +39,11 @@ export function createClient(config: Config): GitHubClient {
         { ...parsed, branch: config.branch.trim() || "main" },
         (url, init) => fetch(url, init),
     );
+}
+
+async function localSha(rel: string): Promise<string> {
+    const b64 = getState().files[rel];
+    return b64 === undefined ? "" : gitBlobSha(decodeBase64(b64));
 }
 
 const memoryEnv: SyncEnv = {
@@ -136,15 +144,26 @@ async function doSync(): Promise<SyncSummary | null> {
         const parsed = parseRepository(config.repository)!;
         const key = `${parsed.owner}/${parsed.repo}#${config.branch.trim() || "main"}|mobile`;
         const client = createClient(config);
-        const result = await retryConcurrent(() => {
-            const previous = getState().manifest;
-            const manifest = previous && previous.key === key ? previous : emptyManifest(key);
-            return runSync(memoryEnv, client, manifest, {
-                deviceName: "Android",
-                readOnlyContent: true,
+        const once = () =>
+            retryConcurrent(() => {
+                const previous = getState().manifest;
+                const manifest = previous && previous.key === key ? previous : emptyManifest(key);
+                // Repertoires are read-only here, except files whose comments were edited.
+                const writable = pendingFiles();
+                return runSync(memoryEnv, client, manifest, {
+                    deviceName: "Android",
+                    readOnlyContent: true,
+                    writable: (rel) => writable.has(rel),
+                });
             });
-        });
+        let result = await once();
         updateState((s) => ({ ...s, manifest: result.manifest }));
+        // The PC changed a file with comments edited here: apply them again and upload.
+        if (await settleEdits(result.manifest.files, localSha)) {
+            result = await once();
+            updateState((s) => ({ ...s, manifest: result.manifest }));
+            await settleEdits(result.manifest.files, localSha);
+        }
         setStatus({ state: "success", summary: result.summary });
         return result.summary;
     } catch (e) {

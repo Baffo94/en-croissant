@@ -18,10 +18,12 @@ import type { PgnGame } from "@/utils/pgnTree";
 import type { TreeNode } from "@/utils/treeReducer";
 import { findFen } from "@/utils/treeReducer";
 import { prepareDeck } from "../repertoires";
+import { setComment } from "../comments";
 import { setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
 import { Board } from "./Board";
+import { CommentItem, type NoteItem } from "./CommentItem";
 
 type Phase =
   | { kind: "waiting" }
@@ -89,15 +91,14 @@ function withSymbols(node: TreeNode | undefined, san: string): string {
   return `${san}${symbols}`;
 }
 
-function Notes({ items }: { items: { label: string; text: string }[] }) {
-  const visible = items.filter((i) => i.text.trim());
+/** Comments of the moves shown; editable ones have ✏️ (or "+ commento" when empty). */
+function Notes({ items }: { items: NoteItem[] }) {
+  const visible = items.filter((i) => i.text.trim() || i.onSave);
   if (visible.length === 0) return null;
   return (
     <div className="notes">
       {visible.map((item) => (
-        <p key={item.label}>
-          <span className="notes-label">{item.label}</span> {item.text}
-        </p>
+        <CommentItem key={item.label} {...item} />
       ))}
     </div>
   );
@@ -139,6 +140,7 @@ export function Practice({
   const [session, setSession] = useState({ correct: 0, incorrect: 0 });
   /** Ply shown while browsing the moves that led to the position (null = live). */
   const [viewPly, setViewPly] = useState<number | null>(null);
+  const [, setCommentVersion] = useState(0);
   const [analysis, setAnalysis] = useState<{
     moves: string[];
     comments: string[];
@@ -192,6 +194,19 @@ export function Practice({
   const current = queue[0];
   const currentSource = current ? prepared.sources[current.key] : prepared.sources[keys[0]];
   const pgn = currentSource.pgn;
+
+  /**
+   * Writes the comment of `node` (reached by `line`) in the PGN, like on the PC, and
+   * shows it at once. The sync uploads the file.
+   */
+  const saveComment = (node: TreeNode | undefined, line: string[], text: string): boolean => {
+    if (!node || line.length === 0) return false;
+    const { rel, game } = currentSource.source;
+    if (!setComment(rel, game, line, text)) return false;
+    node.comment = text.replace(/[{}]/g, "").trim();
+    setCommentVersion((v) => v + 1);
+    return true;
+  };
   const deck = current ? decks[current.key] : undefined;
   const index = current && deck ? deck.positions.findIndex((p) => p.fen === current.fen) : -1;
   const position = deck && index >= 0 ? deck.positions[index] : null;
@@ -301,6 +316,19 @@ export function Practice({
         startFen={pgn.root.fen}
         moves={analysis.moves}
         comments={analysis.comments}
+        onEditComment={(ply, text) => {
+          // Repertoire move number `ply` of the line shown in the analysis.
+          const line = analysis.moves.slice(0, ply);
+          let node: TreeNode | undefined = pgn.root;
+          for (const san of line) node = node?.children.find((c) => c.san === san);
+          if (!saveComment(node, line, text)) return false;
+          setAnalysis((a) =>
+            a
+              ? { ...a, comments: a.comments.map((c, i) => (i === ply - 1 ? node!.comment : c)) }
+              : a,
+          );
+          return true;
+        }}
         initialPly={analysis.ply}
         orientation={pgn.orientation}
         onBack={() => setAnalysis(null)}
@@ -355,6 +383,8 @@ export function Practice({
       : null;
   const colorName = pgn.orientation === "white" ? "Bianco" : "Nero";
   const lastNode = livePly > 0 ? nodes[livePly] : undefined;
+  /** SAN moves from the start of the game to the position being practised. */
+  const lineSans = nodes.slice(1, livePly + 1).map((n) => n.san ?? "");
 
   return (
     <div className="screen practice">
@@ -509,6 +539,15 @@ export function Practice({
                 {
                   label: withSymbols(nodes[viewPly!], nodes[viewPly!].san ?? "Inizio"),
                   text: nodes[viewPly!].comment ?? "",
+                  onSave:
+                    viewPly! > 0
+                      ? (text) =>
+                          saveComment(
+                            nodes[viewPly!],
+                            nodes.slice(1, viewPly! + 1).map((n) => n.san ?? ""),
+                            text,
+                          )
+                      : undefined,
                 },
               ]}
             />
@@ -574,10 +613,16 @@ export function Practice({
                     {
                       label: withSymbols(lastNode, lastNode.san ?? ""),
                       text: lastNode.comment ?? "",
+                      onSave: (text: string) => saveComment(lastNode, lineSans, text),
                     },
                   ]
                 : [{ label: "Inizio", text: pgn.root.comment ?? "" }]),
-              { label: withSymbols(answerNode, position.answer), text: answerNode?.comment ?? "" },
+              {
+                label: withSymbols(answerNode, position.answer),
+                text: answerNode?.comment ?? "",
+                onSave: (text: string) =>
+                  saveComment(answerNode, [...lineSans, position.answer], text),
+              },
             ]}
           />
         )}
