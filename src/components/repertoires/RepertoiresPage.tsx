@@ -23,6 +23,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowsSplit,
+  IconChess,
   IconBook,
   IconChevronDown,
   IconChevronUp,
@@ -90,6 +91,7 @@ import { createTab } from "@/utils/tabs";
 import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 import { CheckPanel, useOpenIssues } from "./CheckPanel";
+import { GamesPanel } from "./GamesPanel";
 import { type CheckFile, checkRunAtom, startCheck } from "./checkRunner";
 import {
   type GroupChoice,
@@ -772,7 +774,7 @@ export default function RepertoiresPage() {
   const [splitting, setSplitting] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
-  const [view, setView] = useState<"list" | "check">("list");
+  const [view, setView] = useState<"list" | "check" | "games">("list");
   const checkRun = useAtomValue(checkRunAtom);
   const issuesOf = useOpenIssues();
   /** "all" for Train all, a group key for a group, null when nothing is starting. */
@@ -1113,10 +1115,23 @@ export default function RepertoiresPage() {
           >
             {t("Repertoires.Tab.Check")}
           </Tabs.Tab>
+          <Tabs.Tab value="games" leftSection={<IconChess size="1rem" />}>
+            {t("Repertoires.Tab.Games")}
+          </Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
-      {view === "check" ? (
+      {view === "games" ? (
+        <ScrollArea flex={1} px="lg" pb="lg">
+          <GamesPanel
+            files={checkFiles}
+            onOpen={(path, game, line) => {
+              const file = files?.find((f) => f.path === path);
+              if (file) openRepertoire(file, false, { game, line });
+            }}
+          />
+        </ScrollArea>
+      ) : view === "check" ? (
         <ScrollArea flex={1} px="lg" pb="lg">
           <CheckPanel
             files={checkFiles}

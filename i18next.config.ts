@@ -38,6 +38,10 @@ export default defineConfig({
             "Annotate.*",
             "GoMode.*",
             "Errors.*",
+            // Built from a variable (speed or result of a game).
+            "Repertoires.Games.Speed.*",
+            "Repertoires.Games.Result.*",
+            "Settings.Repertoire.Check.Speed.*",
         ],
         sort: true,
     },

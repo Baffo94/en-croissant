@@ -169,3 +169,21 @@ export function removeDecks(path: string): void {
         localStorage.removeItem(key);
     }
 }
+
+/**
+ * Makes the position (any move counters) of a repertoire due now: used when a game
+ * showed you forgot it. Only the due date changes; returns false when the position
+ * has no card yet (it is then still to be learned anyway).
+ */
+export function reviewPositionNow(path: string, game: number, fen: string): boolean {
+    const key = (f: string) => f.split(" ").slice(0, 4).join(" ");
+    const deck = decksOfFile(path)[game];
+    if (!deck) return false;
+    const index = deck.positions.findIndex((p) => key(p.fen) === key(fen));
+    if (index < 0) return false;
+    const positions = deck.positions.map((p, i) =>
+        i === index ? { ...p, card: { ...p.card, due: new Date() } } : p,
+    );
+    getDefaultStore().set(deckAtomFamily({ file: path, game }), { ...deck, positions });
+    return true;
+}
