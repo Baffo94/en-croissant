@@ -76,6 +76,7 @@ import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import classes from "./SettingsPage.module.css";
 import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
+import { RepertoireCheckRatings, RepertoireCheckSpeeds } from "./RepertoireCheckSettings";
 import SyncSettings from "./SyncSettings";
 import ThemeButton from "./ThemeButton";
 import VolumeSlider from "./VolumeSlider";
@@ -576,6 +577,22 @@ export default function Page() {
             onChange={(val) => setPracticeAutoDifficulty(val as "none" | "1" | "2" | "3" | "4")}
           />
         ),
+      },
+      {
+        id: "repertoire-check-ratings",
+        category: "repertoire",
+        title: t("Settings.Repertoire.Check.Ratings"),
+        description: t("Settings.Repertoire.Check.Ratings.Desc"),
+        keywords: ["repertoire", "check", "elo", "rating", "lichess", "holes"],
+        render: () => <RepertoireCheckRatings />,
+      },
+      {
+        id: "repertoire-check-speeds",
+        category: "repertoire",
+        title: t("Settings.Repertoire.Check.Speeds"),
+        description: t("Settings.Repertoire.Check.Speeds.Desc"),
+        keywords: ["repertoire", "check", "speed", "blitz", "rapid", "lichess"],
+        render: () => <RepertoireCheckSpeeds />,
       },
       // Sound settings
       {

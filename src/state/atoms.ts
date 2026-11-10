@@ -738,3 +738,11 @@ export const enableAllAtom = atom(null, (get, set, value: boolean) => {
         set(atom, { ...get(atom), enabled: value });
     }
 });
+
+/** Lichess games used by the repertoire check to find holes (ratings and speeds). */
+export const repertoireCheckSettingsAtom = atomWithStorage<{ ratings: number[]; speeds: string[] }>(
+    "repertoire-check-settings",
+    { ratings: [1600, 1800, 2000], speeds: ["rapid", "classical"] },
+    undefined,
+    { getOnInit: true },
+);

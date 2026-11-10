@@ -16,6 +16,7 @@ import {
   Text,
   TextInput,
   Title,
+  Tabs,
   Tooltip,
   UnstyledButton,
 } from "@mantine/core";
@@ -88,6 +89,8 @@ import { normalizePath, relativePath } from "@/utils/sync/core";
 import { createTab } from "@/utils/tabs";
 import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
+import { CheckPanel, useOpenIssues } from "./CheckPanel";
+import { type CheckFile, checkRunAtom, startCheck } from "./checkRunner";
 import {
   type GroupChoice,
   MoveToGroupModal,
@@ -335,6 +338,7 @@ type FileActions = {
   onMoveToGroup: (file: RepertoireFile) => void;
   onSplit: (file: RepertoireFile) => void;
   onDelete: (file: RepertoireFile) => void;
+  onCheck: (file: RepertoireFile) => void;
 };
 
 function showInFolder(path: string) {
@@ -389,6 +393,9 @@ function FileMenu({
             {t("Repertoires.SplitSections")}
           </Menu.Item>
         )}
+        <Menu.Item leftSection={<IconSearch size="1rem" />} onClick={() => actions.onCheck(file)}>
+          {t("Repertoires.Check.Run")}
+        </Menu.Item>
         <Menu.Item
           leftSection={<IconFolderOpen size="1rem" />}
           onClick={() => showInFolder(file.path)}
@@ -483,6 +490,7 @@ type GroupActions = {
   onAddSection: (group: GroupEntry, orientation: "white" | "black") => void;
   onRename: (group: GroupEntry) => void;
   onDelete: (group: GroupEntry) => void;
+  onCheck: (group: GroupEntry) => void;
 };
 
 const EXPANDED_KEY = "repertoire-groups-expanded";
@@ -668,6 +676,12 @@ function GroupCard({
                 {t("Repertoires.AddSection")}
               </Menu.Item>
               <Menu.Item
+                leftSection={<IconSearch size="1rem" />}
+                onClick={() => actions.onCheck(group)}
+              >
+                {t("Repertoires.Check.RunGroup")}
+              </Menu.Item>
+              <Menu.Item
                 leftSection={<IconPencil size="1rem" />}
                 onClick={() => actions.onRename(group)}
               >
@@ -758,6 +772,9 @@ export default function RepertoiresPage() {
   const [splitting, setSplitting] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
+  const [view, setView] = useState<"list" | "check">("list");
+  const checkRun = useAtomValue(checkRunAtom);
+  const issuesOf = useOpenIssues();
   /** "all" for Train all, a group key for a group, null when nothing is starting. */
   const [startingTrain, setStartingTrain] = useState<string | null>(null);
 
@@ -834,20 +851,56 @@ export default function RepertoiresPage() {
 
   const totalToDo = Object.values(states).reduce((n, s) => n + s.toDo, 0);
 
-  async function openRepertoire(file: RepertoireFile, practice: boolean) {
+  const openIssues = (files ?? []).reduce((n, f) => n + issuesOf(f.path), 0);
+
+  // Repertoires as the check sees them: answers are compared inside a group only.
+  const checkFiles: CheckFile[] = useMemo(
+    () =>
+      (files ?? []).map((f) => ({
+        path: f.path,
+        label: practiceLabel(f),
+        group: f.group ? `${f.base}/${f.group}` : f.path,
+      })),
+    [files],
+  );
+
+  async function openRepertoire(
+    file: RepertoireFile,
+    practice: boolean,
+    at?: { game: number; line: string[] },
+  ) {
+    const game = at?.game ?? 0;
     const [pgnResult, countResult] = await Promise.all([
-      commands.readGames(file.path, 0, 0),
+      commands.readGames(file.path, game, game),
       commands.countPgnGames(file.path),
     ]);
     const pgn = unwrap(pgnResult)[0] ?? "";
+    // Opened on a given position (from the repertoire check): path of child indices.
+    let position: {
+      headers: Awaited<ReturnType<typeof parsePGN>>["headers"];
+      path: number[];
+    } | null = null;
+    if (at) {
+      const tree = await parsePGN(pgn);
+      const path: number[] = [];
+      let node = tree.root;
+      for (const san of at.line) {
+        const i = node.children.findIndex((c) => c.san === san);
+        if (i < 0) break;
+        path.push(i);
+        node = node.children[i];
+      }
+      position = { headers: tree.headers, path };
+    }
     const tabId = await createTab({
       tab: { name: practiceLabel(file), type: "analysis" },
       setTabs,
       setActiveTab,
       pgn,
+      ...(position ? { headers: position.headers, position: position.path } : {}),
       gameOrigin: {
         kind: "file",
-        gameNumber: 0,
+        gameNumber: game,
         file: { ...file, numGames: unwrap(countResult) },
       },
     });
@@ -951,6 +1004,10 @@ export default function RepertoiresPage() {
     onMoveToGroup: setMoving,
     onSplit: setSplitting,
     onDelete: setDeleting,
+    onCheck: (file) => {
+      setView("check");
+      startCheck(checkFiles, [file.path], practiceLabel(file));
+    },
   };
 
   const groupActions: GroupActions = {
@@ -964,6 +1021,14 @@ export default function RepertoiresPage() {
       }),
     onRename: setRenamingGroup,
     onDelete: setDeletingGroup,
+    onCheck: (group) => {
+      setView("check");
+      startCheck(
+        checkFiles,
+        group.files.map((f) => f.path),
+        group.name,
+      );
+    },
   };
 
   return (
@@ -1028,70 +1093,107 @@ export default function RepertoiresPage() {
         </Group>
       </Group>
 
-      <Group px="lg" pb="md">
-        <TextInput
-          placeholder={t("Common.Search")}
-          leftSection={<IconSearch size="1rem" />}
-          value={search}
-          onChange={(e) => setSearch(e.currentTarget.value)}
-          style={{ flex: 1, maxWidth: 360 }}
-        />
-        <SegmentedControl
-          value={color}
-          onChange={(v) => setColor(v as typeof color)}
-          data={[
-            { label: t("Repertoires.All"), value: "all" },
-            { label: t("Common.WHITE"), value: "white" },
-            { label: t("Common.BLACK"), value: "black" },
-          ]}
-        />
-      </Group>
+      <Tabs value={view} onChange={(v) => setView((v as typeof view) ?? "list")} px="lg" pb="sm">
+        <Tabs.List>
+          <Tabs.Tab value="list" leftSection={<IconBook size="1rem" />}>
+            {t("Repertoires.Tab.List")}
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="check"
+            leftSection={<IconSearch size="1rem" />}
+            rightSection={
+              checkRun.running ? (
+                <Loader size={12} />
+              ) : openIssues > 0 ? (
+                <Badge size="xs" color="orange" variant="light">
+                  {openIssues}
+                </Badge>
+              ) : null
+            }
+          >
+            {t("Repertoires.Tab.Check")}
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
 
-      <ScrollArea flex={1} px="lg" pb="lg">
-        {isLoading ? (
-          <Center h={200}>
-            <Loader />
-          </Center>
-        ) : visible.length === 0 ? (
-          <Center h={240}>
-            <Stack align="center" gap="xs">
-              <IconBook size={48} style={{ color: "var(--mantine-color-dimmed)" }} />
-              <Text c="dimmed" ta="center" maw={420}>
-                {files && files.length > 0 ? t("Repertoires.NoMatch") : t("Repertoires.Empty")}
-              </Text>
-              {(!files || files.length === 0) && (
-                <Button mt="sm" leftSection={<IconPlus size="1rem" />} onClick={startCreate}>
-                  {t("Repertoires.New")}
-                </Button>
-              )}
-            </Stack>
-          </Center>
-        ) : (
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md">
-            {visible.map((entry) =>
-              entry.kind === "file" ? (
-                <RepertoireCard
-                  key={entry.file.path}
-                  file={entry.file}
-                  info={infos?.[entry.file.path]}
-                  state={states[entry.file.path] ?? fileState(entry.file, undefined)}
-                  actions={fileActions}
-                />
-              ) : (
-                <GroupCard
-                  key={entry.key}
-                  group={entry}
-                  infos={infos}
-                  states={states}
-                  fileActions={fileActions}
-                  actions={groupActions}
-                  training={startingTrain === entry.key}
-                />
-              ),
+      {view === "check" ? (
+        <ScrollArea flex={1} px="lg" pb="lg">
+          <CheckPanel
+            files={checkFiles}
+            onOpen={(path, game, line) => {
+              const file = files?.find((f) => f.path === path);
+              if (file) openRepertoire(file, false, { game, line });
+            }}
+          />
+        </ScrollArea>
+      ) : (
+        <>
+          <Group px="lg" pb="md">
+            <TextInput
+              placeholder={t("Common.Search")}
+              leftSection={<IconSearch size="1rem" />}
+              value={search}
+              onChange={(e) => setSearch(e.currentTarget.value)}
+              style={{ flex: 1, maxWidth: 360 }}
+            />
+            <SegmentedControl
+              value={color}
+              onChange={(v) => setColor(v as typeof color)}
+              data={[
+                { label: t("Repertoires.All"), value: "all" },
+                { label: t("Common.WHITE"), value: "white" },
+                { label: t("Common.BLACK"), value: "black" },
+              ]}
+            />
+          </Group>
+
+          <ScrollArea flex={1} px="lg" pb="lg">
+            {isLoading ? (
+              <Center h={200}>
+                <Loader />
+              </Center>
+            ) : visible.length === 0 ? (
+              <Center h={240}>
+                <Stack align="center" gap="xs">
+                  <IconBook size={48} style={{ color: "var(--mantine-color-dimmed)" }} />
+                  <Text c="dimmed" ta="center" maw={420}>
+                    {files && files.length > 0 ? t("Repertoires.NoMatch") : t("Repertoires.Empty")}
+                  </Text>
+                  {(!files || files.length === 0) && (
+                    <Button mt="sm" leftSection={<IconPlus size="1rem" />} onClick={startCreate}>
+                      {t("Repertoires.New")}
+                    </Button>
+                  )}
+                </Stack>
+              </Center>
+            ) : (
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md">
+                {visible.map((entry) =>
+                  entry.kind === "file" ? (
+                    <RepertoireCard
+                      key={entry.file.path}
+                      file={entry.file}
+                      info={infos?.[entry.file.path]}
+                      state={states[entry.file.path] ?? fileState(entry.file, undefined)}
+                      actions={fileActions}
+                    />
+                  ) : (
+                    <GroupCard
+                      key={entry.key}
+                      group={entry}
+                      infos={infos}
+                      states={states}
+                      fileActions={fileActions}
+                      actions={groupActions}
+                      training={startingTrain === entry.key}
+                    />
+                  ),
+                )}
+              </SimpleGrid>
             )}
-          </SimpleGrid>
-        )}
-      </ScrollArea>
+          </ScrollArea>
+        </>
+      )}
 
       <CreateRepertoireModal
         opened={create !== null}

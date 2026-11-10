@@ -52,6 +52,8 @@ i18n
     },
     fallbackLng: "en-US",
     returnEmptyString: false,
+    // React already escapes text: escaping here too showed "/" as "&#x2F;" in dates.
+    interpolation: { escapeValue: false },
   });
 
 dayjs.extend(customParseFormat);
