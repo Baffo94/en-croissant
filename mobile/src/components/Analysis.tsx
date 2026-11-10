@@ -58,7 +58,8 @@ export function Analysis({
   const [history, setHistory] = useState<Ply[]>(() => replay(startFen, moves));
   const [ply, setPly] = useState(() => Math.min(initialPly, moves.length));
   const [flipped, setFlipped] = useState(false);
-  const [engineOn, setEngineOn] = useState(true);
+  // Off by default: started (and loaded) only on request.
+  const [engineOn, setEngineOn] = useState(false);
   const [tab, setTab] = useState<"engine" | "explorer">("engine");
   const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null);
   const engine = useRef<Engine | null>(null);
@@ -66,10 +67,7 @@ export function Analysis({
 
   const fen = ply === 0 ? startFen : history[ply - 1].fen;
 
-  useEffect(() => {
-    engine.current = new Engine();
-    return () => engine.current?.destroy();
-  }, []);
+  useEffect(() => () => engine.current?.destroy(), []);
 
   useEffect(() => {
     setAnalysis(null);
@@ -77,6 +75,7 @@ export function Analysis({
       engine.current?.stop();
       return;
     }
+    if (!engine.current) engine.current = new Engine();
     const [pos] = positionFromFen(fen);
     if (!pos || pos.isEnd()) return;
     engine.current?.analyse(fen, setAnalysis, { multiPv: 3, depth: ENGINE_DEPTH });
