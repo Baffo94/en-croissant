@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { PracticeData } from "@/state/atoms";
 import {
-    liveNotes,
-    mergeNotes,
-    type Note,
     type PauseState,
     parseProgressFile,
     conflictCopyPath,
@@ -274,13 +271,6 @@ class MemoryEnv implements SyncEnv {
     files = new Map<string, Uint8Array>();
     decks = new Map<string, Record<string, PracticeData>>();
     pauses = new Map<string, PauseState>();
-    notes = new Map<string, Note[]>();
-    getNotes(rel: string) {
-        return structuredClone(this.notes.get(rel) ?? []);
-    }
-    setNotes(rel: string, notes: Note[]) {
-        this.notes.set(rel, structuredClone(notes));
-    }
     getPause(rel: string) {
         return this.pauses.get(rel) ?? null;
     }
@@ -306,11 +296,6 @@ class MemoryEnv implements SyncEnv {
         this.decks.set(rel, { ...(this.decks.get(rel) ?? {}), [game]: structuredClone(deck) });
     }
     moveDecks(from: string, to: string) {
-        const notes = this.notes.get(from);
-        if (notes) {
-            this.notes.set(to, notes);
-            this.notes.delete(from);
-        }
         const old = this.decks.get(from);
         if (!old) return;
         const target = { ...(this.decks.get(to) ?? {}) };
@@ -555,85 +540,6 @@ describe("speed and reliability", () => {
         const pc2 = new MemoryEnv();
         await runSync(pc2, client(repo), emptyManifest("k2"));
         expect(raw.decode(pc2.files.get("White.pgn")!)).toBe("\uFEFF1. e4 *");
-    });
-});
-
-function note(id: string, text: string, updated: string, extra: Partial<Note> = {}): Note {
-    return {
-        id,
-        game: 0,
-        startFen: "start",
-        line: ["e4", "e5", "Bc4"],
-        fen: "after",
-        text,
-        device: "Android",
-        created: "2026-11-01T10:00:00.000Z",
-        updated,
-        ...extra,
-    };
-}
-
-describe("notes", () => {
-    test("mergeNotes keeps every note and the latest edit of each", () => {
-        const a = [
-            note("1", "old", "2026-11-01T10:00:00.000Z"),
-            note("2", "two", "2026-11-01T10:00:00.000Z"),
-        ];
-        const b = [
-            note("1", "new", "2026-11-02T10:00:00.000Z"),
-            note("3", "three", "2026-11-01T11:00:00.000Z"),
-        ];
-        const merged = mergeNotes(a, b);
-        expect(merged.map((n) => [n.id, n.text])).toEqual([
-            ["1", "new"],
-            ["2", "two"],
-            ["3", "three"],
-        ]);
-    });
-
-    test("a note written on the phone reaches the PC; deleting it on the PC reaches the phone", async () => {
-        const repo = new FakeRepo();
-        const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
-        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
-        const phone = new MemoryEnv();
-        const phoneFirst = await runSync(phone, client(repo), emptyManifest("phone"), {
-            readOnlyContent: true,
-        });
-
-        phone.setNotes("White.pgn", [note("n1", "Perché non d4?", "2026-11-09T10:00:00.000Z")]);
-        const phoneSecond = await runSync(phone, client(repo), phoneFirst.manifest, {
-            readOnlyContent: true,
-        });
-        expect(parseProgressFile(repo.text("progress/White.json")!).notes[0].text).toBe(
-            "Perché non d4?",
-        );
-        // The PGN is untouched.
-        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
-
-        const pcSecond = await runSync(pc, client(repo), pcFirst.manifest);
-        expect(pc.getNotes("White.pgn").map((n) => n.text)).toEqual(["Perché non d4?"]);
-
-        pc.setNotes("White.pgn", [note("n1", "", "2026-11-09T12:00:00.000Z", { deleted: true })]);
-        await runSync(pc, client(repo), pcSecond.manifest);
-        await runSync(phone, client(repo), phoneSecond.manifest, { readOnlyContent: true });
-        expect(liveNotes(phone.getNotes("White.pgn"))).toEqual([]);
-    });
-
-    test("notes follow a renamed repertoire", async () => {
-        const repo = new FakeRepo();
-        const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
-        pc.setNotes("White.pgn", [note("n1", "nota", "2026-11-09T10:00:00.000Z")]);
-        const first = await runSync(pc, client(repo), emptyManifest("pc"));
-        pc.files.set("Group/White.pgn", pc.files.get("White.pgn")!);
-        pc.files.delete("White.pgn");
-        pc.moveDecks("White.pgn", "Group/White.pgn");
-        await runSync(pc, client(repo), first.manifest);
-        expect(repo.text("progress/White.json")).toBeUndefined();
-        expect(parseProgressFile(repo.text("progress/Group/White.json")!).notes[0].text).toBe(
-            "nota",
-        );
     });
 });
 

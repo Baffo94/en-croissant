@@ -72,7 +72,6 @@ import { parsePGN } from "@/utils/chess";
 import {
   decksOfFile,
   isRepertoirePaused,
-  notesAtomOf,
   pauseAtomOf,
   removeDecks,
   setPaused,
@@ -89,9 +88,6 @@ import { normalizePath, relativePath } from "@/utils/sync/core";
 import { createTab } from "@/utils/tabs";
 import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
-import { notePgn } from "@/utils/noteLine";
-import type { Note } from "@/utils/sync/core";
-import { NotesBadge, NotesModal, type NotesFile, notesCount } from "./NotesModal";
 import {
   type GroupChoice,
   MoveToGroupModal,
@@ -339,7 +335,6 @@ type FileActions = {
   onMoveToGroup: (file: RepertoireFile) => void;
   onSplit: (file: RepertoireFile) => void;
   onDelete: (file: RepertoireFile) => void;
-  onNotes: (files: RepertoireFile[]) => void;
 };
 
 function showInFolder(path: string) {
@@ -449,7 +444,6 @@ function RepertoireCard({
           </div>
         </Group>
         <Group gap={4} wrap="nowrap">
-          <NotesBadge count={notesCount([file.path])} onClick={() => actions.onNotes([file])} />
           {file.inSyncFolder && (
             <Tooltip label={t("Repertoires.Synced")}>
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
@@ -555,7 +549,6 @@ function SectionRow({
         <StatusBadges {...state} size="xs" />
       </Stack>
       <Group gap={2} wrap="nowrap">
-        <NotesBadge count={notesCount([file.path])} onClick={() => actions.onNotes([file])} />
         <Tooltip
           label={
             state.toDo > 0
@@ -641,10 +634,6 @@ function GroupCard({
           </Group>
         </UnstyledButton>
         <Group gap={4} wrap="nowrap">
-          <NotesBadge
-            count={notesCount(group.files.map((f) => f.path))}
-            onClick={() => fileActions.onNotes(group.files)}
-          />
           {synced && (
             <Tooltip label={t("Repertoires.Synced")}>
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
@@ -769,7 +758,6 @@ export default function RepertoiresPage() {
   const [splitting, setSplitting] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
-  const [notesOf, setNotesOf] = useState<NotesFile[] | null>(null);
   /** "all" for Train all, a group key for a group, null when nothing is starting. */
   const [startingTrain, setStartingTrain] = useState<string | null>(null);
 
@@ -800,7 +788,6 @@ export default function RepertoiresPage() {
       atom((get) => [
         ...(files ?? []).map((f) => get(deckAtomFamily({ file: f.path, game: 0 }))),
         ...(files ?? []).map((f) => get(pauseAtomOf(f.path))),
-        ...(files ?? []).map((f) => get(notesAtomOf(f.path))),
       ]),
     [files],
   );
@@ -964,25 +951,7 @@ export default function RepertoiresPage() {
     onMoveToGroup: setMoving,
     onSplit: setSplitting,
     onDelete: setDeleting,
-    onNotes: (list) => setNotesOf(list.map((f) => ({ path: f.path, name: practiceLabel(f) }))),
   };
-
-  /** Opens the line of a note in a new analysis tab (the repertoire is not touched). */
-  async function openNote(file: NotesFile, note: Note) {
-    const pgn = notePgn(note);
-    const tree = await parsePGN(pgn);
-    await createTab({
-      tab: { name: `📝 ${file.name}`, type: "analysis" },
-      setTabs,
-      setActiveTab,
-      pgn,
-      // Board from the side of the repertoire.
-      headers: { ...tree.headers, orientation: infos?.[file.path]?.orientation ?? "white" },
-      position: note.line.map(() => 0),
-    });
-    setNotesOf(null);
-    navigate({ to: "/" });
-  }
 
   const groupActions: GroupActions = {
     onTrain: (group) => startMixed(group.files, group.key, group.name),
@@ -1172,7 +1141,6 @@ export default function RepertoiresPage() {
           mutate();
         }}
       />
-      <NotesModal files={notesOf} onClose={() => setNotesOf(null)} onOpen={openNote} />
       <ConfirmModal
         title={t("Repertoires.DeleteTitle", { name: deleting?.name ?? "" })}
         description={

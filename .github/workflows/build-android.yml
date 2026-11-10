@@ -12,7 +12,6 @@ on:
       - "mobile/**"
       - "src/utils/sync/**"
       - "src/utils/pgnTree.ts"
-      - "src/utils/noteLine.ts"
       - "src/utils/treeReducer.ts"
       - "src/utils/chessops.ts"
       - "src/components/files/opening.ts"

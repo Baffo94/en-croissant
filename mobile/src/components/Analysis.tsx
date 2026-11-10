@@ -9,8 +9,6 @@ import { useBackHandler } from "../back";
 import { type Analysis as EngineAnalysis, Engine, formatScore, pvToSan, whiteBar } from "../engine";
 import { Board } from "./Board";
 import { ExplorerPanel } from "./ExplorerPanel";
-import { NoteEditor, NotesHere } from "./NoteEditor";
-import { addNote } from "../state";
 import { Header } from "./Practice";
 
 type Ply = { san: string; uci: string; fen: string };
@@ -45,7 +43,6 @@ export function Analysis({
   comments = [],
   initialPly,
   orientation,
-  noteTarget,
   onBack,
 }: {
   startFen: string;
@@ -55,26 +52,24 @@ export function Analysis({
   comments?: string[];
   initialPly: number;
   orientation: "white" | "black";
-  /** Repertoire the notes written here belong to. */
-  noteTarget?: { rel: string; game: number };
   onBack: () => void;
 }) {
   useBackHandler(onBack);
   const [history, setHistory] = useState<Ply[]>(() => replay(startFen, moves));
   const [ply, setPly] = useState(() => Math.min(initialPly, moves.length));
   const [flipped, setFlipped] = useState(false);
-  // Off by default: started only on request.
-  const [engineOn, setEngineOn] = useState(false);
+  const [engineOn, setEngineOn] = useState(true);
   const [tab, setTab] = useState<"engine" | "explorer">("engine");
   const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null);
   const engine = useRef<Engine | null>(null);
-  const [writing, setWriting] = useState(false);
   const movesRef = useRef<HTMLDivElement>(null);
 
   const fen = ply === 0 ? startFen : history[ply - 1].fen;
 
-  // The engine is loaded the first time it is switched on.
-  useEffect(() => () => engine.current?.destroy(), []);
+  useEffect(() => {
+    engine.current = new Engine();
+    return () => engine.current?.destroy();
+  }, []);
 
   useEffect(() => {
     setAnalysis(null);
@@ -82,7 +77,6 @@ export function Analysis({
       engine.current?.stop();
       return;
     }
-    if (!engine.current) engine.current = new Engine();
     const [pos] = positionFromFen(fen);
     if (!pos || pos.isEnd()) return;
     engine.current?.analyse(fen, setAnalysis, { multiPv: 3, depth: ENGINE_DEPTH });
@@ -155,17 +149,6 @@ export function Analysis({
             >
               ⇅
             </button>
-            {noteTarget && (
-              <button
-                type="button"
-                className="icon"
-                aria-label="Scrivi una nota sulla mossa"
-                disabled={ply === 0}
-                onClick={() => setWriting(true)}
-              >
-                📝
-              </button>
-            )}
             <button
               type="button"
               className={`engine-toggle ${engineOn ? "on" : ""}`}
@@ -268,26 +251,6 @@ export function Analysis({
           </div>
         ) : null;
       })()}
-
-      {noteTarget && <NotesHere rel={noteTarget.rel} fen={fen} />}
-
-      {writing && noteTarget && ply > 0 && (
-        <NoteEditor
-          startFen={startFen}
-          line={history.slice(0, ply).map((p) => p.san)}
-          onCancel={() => setWriting(false)}
-          onSave={(text) => {
-            addNote(noteTarget.rel, {
-              game: noteTarget.game,
-              startFen,
-              line: history.slice(0, ply).map((p) => p.san),
-              fen,
-              text,
-            });
-            setWriting(false);
-          }}
-        />
-      )}
 
       <div className="tabs">
         <button

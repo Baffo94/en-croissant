@@ -19,61 +19,7 @@ export type ProgressFile = {
     games: Record<string, PracticeData>;
     /** Whether the repertoire is paused (left out of reviews); absent = never paused. */
     pause?: PauseState;
-    /** Notes written on moves (also moves outside the repertoire); absent = none. */
-    notes?: Note[];
 };
-
-/**
- * A note on a move, written on any device. Kept apart from the PGN: it never changes
- * the repertoire. Deleting one leaves a tombstone so the deletion reaches every device.
- */
-export type Note = {
-    id: string;
-    /** Game index inside the PGN file. */
-    game: number;
-    /** Position the line starts from (the repertoire's start position). */
-    startFen: string;
-    /** SAN moves from `startFen`; the note is about the last one. */
-    line: string[];
-    /** Position after the line. */
-    fen: string;
-    text: string;
-    device: string;
-    created: string;
-    updated: string;
-    deleted?: boolean;
-};
-
-/** Union of two note lists; for a note edited on both sides the latest edit wins. */
-export function mergeNotes(a: readonly Note[], b: readonly Note[]): Note[] {
-    const byId = new Map<string, Note>();
-    for (const note of [...a, ...b]) {
-        const prev = byId.get(note.id);
-        if (!prev || new Date(note.updated).getTime() > new Date(prev.updated).getTime())
-            byId.set(note.id, note);
-    }
-    return [...byId.values()].sort(
-        (x, y) => x.created.localeCompare(y.created) || x.id.localeCompare(y.id),
-    );
-}
-
-/** Notes still shown (not deleted). */
-export function liveNotes(notes: readonly Note[] | undefined): Note[] {
-    return (notes ?? []).filter((n) => !n.deleted);
-}
-
-function isNote(value: unknown): value is Note {
-    const n = value as Note;
-    return (
-        !!n &&
-        typeof n.id === "string" &&
-        typeof n.fen === "string" &&
-        typeof n.text === "string" &&
-        Array.isArray(n.line) &&
-        typeof n.updated === "string" &&
-        typeof n.created === "string"
-    );
-}
 
 /** Pause state of a repertoire, synced between devices: the latest change wins. */
 export type PauseState = {
@@ -323,7 +269,6 @@ export function isEmptyDeck(deck: PracticeData): boolean {
 export function serializeProgress(
     games: Record<string, PracticeData>,
     pause: PauseState | null = null,
-    notes: readonly Note[] = [],
 ): string {
     const sorted: Record<string, PracticeData> = {};
     for (const key of Object.keys(games).sort((a, b) => Number(a) - Number(b))) {
@@ -333,7 +278,6 @@ export function serializeProgress(
         version: PROGRESS_VERSION,
         games: sorted,
         ...(pause ? { pause } : {}),
-        ...(notes.length > 0 ? { notes: mergeNotes(notes, []) } : {}),
     };
     return `${JSON.stringify(canonical(file), null, 2)}\n`;
 }
@@ -363,7 +307,6 @@ export function parseProgress(text: string): Record<string, PracticeData> {
 export function parseProgressFile(text: string): {
     games: Record<string, PracticeData>;
     pause: PauseState | null;
-    notes: Note[];
 } {
     const parsed = JSON.parse(text) as Partial<ProgressFile>;
     if (
@@ -387,8 +330,7 @@ export function parseProgressFile(text: string): {
         typeof parsed.pause.changedAt === "string"
             ? parsed.pause
             : null;
-    const notes = Array.isArray(parsed.notes) ? parsed.notes.filter(isNote) : [];
-    return { games, pause, notes };
+    return { games, pause };
 }
 
 // ---------------------------------------------------------------------------

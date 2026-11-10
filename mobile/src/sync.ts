@@ -56,9 +56,7 @@ const memoryEnv: SyncEnv = {
             delete decks[rel];
             const pauses = { ...s.pauses };
             delete pauses[rel];
-            const notes = { ...s.notes };
-            delete notes[rel];
-            return { ...s, files, decks, pauses, notes };
+            return { ...s, files, decks, pauses };
         });
     },
     getDecks(rel) {
@@ -81,19 +79,8 @@ const memoryEnv: SyncEnv = {
                 pauses[to] = pauses[from];
                 delete pauses[from];
             }
-            const notes = { ...s.notes };
-            if (notes[from]) {
-                notes[to] = notes[from];
-                delete notes[from];
-            }
-            return { ...s, decks, pauses, notes };
+            return { ...s, decks, pauses };
         });
-    },
-    getNotes(rel) {
-        return structuredClone(getState().notes?.[rel] ?? []);
-    },
-    setNotes(rel, notes) {
-        updateState((s) => ({ ...s, notes: { ...s.notes, [rel]: notes } }));
     },
     getPause(rel) {
         return getState().pauses?.[rel] ?? null;

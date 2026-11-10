@@ -4,7 +4,7 @@
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
-import type { Note, PauseState } from "@/utils/sync/core";
+import type { PauseState } from "@/utils/sync/core";
 import type { SyncManifest } from "@/utils/sync/engine";
 import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
 import { DEFAULT_EXPLORER, type ExplorerSettings } from "./explorer";
@@ -28,8 +28,6 @@ export type AppState = {
     explorer: ExplorerSettings;
     /** relPgn -> pause state (synced through the progress files). */
     pauses: Record<string, PauseState>;
-    /** relPgn -> notes on moves (deleted ones included; synced through the progress files). */
-    notes: Record<string, Note[]>;
 };
 
 const FILE = "state.json";
@@ -45,7 +43,6 @@ function initialState(): AppState {
         appearance: { board: DEFAULT_BOARD, pieces: DEFAULT_PIECES },
         explorer: DEFAULT_EXPLORER,
         pauses: {},
-        notes: {},
     };
 }
 
@@ -70,7 +67,6 @@ export async function loadState(): Promise<void> {
             appearance: { ...initialState().appearance, ...parsed.appearance },
             explorer: { ...initialState().explorer, ...parsed.explorer },
             pauses: parsed.pauses ?? {},
-            notes: parsed.notes ?? {},
         };
     } catch {
         state = initialState();
@@ -182,53 +178,5 @@ export function setRepertoirePaused(rel: string, paused: boolean) {
     updateState((s) => ({
         ...s,
         pauses: { ...s.pauses, [rel]: { paused, changedAt: new Date().toISOString() } },
-    }));
-}
-
-function newId(): string {
-    try {
-        return crypto.randomUUID();
-    } catch {
-        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    }
-}
-
-/** Adds a note on the last move of `line` (it never touches the repertoire). */
-export function addNote(
-    rel: string,
-    note: Pick<Note, "game" | "startFen" | "line" | "fen" | "text">,
-): void {
-    const now = new Date().toISOString();
-    const full: Note = { ...note, id: newId(), device: "Android", created: now, updated: now };
-    updateState((s) => ({
-        ...s,
-        notes: { ...s.notes, [rel]: [...(s.notes?.[rel] ?? []), full] },
-    }));
-}
-
-export function editNote(rel: string, id: string, text: string): void {
-    const now = new Date().toISOString();
-    updateState((s) => ({
-        ...s,
-        notes: {
-            ...s.notes,
-            [rel]: (s.notes?.[rel] ?? []).map((n) =>
-                n.id === id ? { ...n, text, updated: now } : n,
-            ),
-        },
-    }));
-}
-
-/** Deletes a note on every device (a tombstone travels with the sync). */
-export function deleteNote(rel: string, id: string): void {
-    const now = new Date().toISOString();
-    updateState((s) => ({
-        ...s,
-        notes: {
-            ...s.notes,
-            [rel]: (s.notes?.[rel] ?? []).map((n) =>
-                n.id === id ? { ...n, text: "", deleted: true, updated: now } : n,
-            ),
-        },
     }));
 }

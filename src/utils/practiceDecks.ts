@@ -10,8 +10,6 @@ import {
     emptyDeck,
     isPaused,
     mergeDecks,
-    liveNotes,
-    type Note,
     normalizePath,
     parseDeckKey,
     type PauseState,
@@ -61,80 +59,26 @@ export function usePaused(path: string): boolean {
     return isPaused(useAtomValue(pauseAtomFamily(normalizePath(path))));
 }
 
-// ---------------------------------------------------------------------------
-// Notes on moves: "repertoire-notes-<normalised path>" -> Note[] (deleted ones included)
-// ---------------------------------------------------------------------------
-
-const NOTES_PREFIX = "repertoire-notes-";
-
-const notesAtomFamily = atomFamily((normalizedPath: string) =>
-    atomWithStorage<Note[]>(`${NOTES_PREFIX}${normalizedPath}`, [], undefined, {
-        getOnInit: true,
-    }),
-);
-
-export function notesAtomOf(path: string) {
-    return notesAtomFamily(normalizePath(path));
-}
-
-/** All notes of a repertoire, deleted ones included (for the sync). */
-export function getNotes(path: string): Note[] {
-    return getDefaultStore().get(notesAtomFamily(normalizePath(path)));
-}
-
-export function setNotes(path: string, notes: Note[]): void {
-    const atom = notesAtomFamily(normalizePath(path));
-    getDefaultStore().set(atom, notes);
-    if (notes.length === 0) localStorage.removeItem(`${NOTES_PREFIX}${normalizePath(path)}`);
-}
-
-/** Notes shown for a repertoire (not deleted), reactive. */
-export function useNotes(path: string): Note[] {
-    return liveNotes(useAtomValue(notesAtomFamily(normalizePath(path))));
-}
-
-/** Deletes a note everywhere: a tombstone that the sync takes to the other devices. */
-export function deleteNote(path: string, id: string): void {
-    const now = new Date().toISOString();
-    setNotes(
-        path,
-        getNotes(path).map((n) =>
-            n.id === id ? { ...n, deleted: true, text: "", updated: now } : n,
-        ),
-    );
-}
-
-/** Moves values stored per path (pauses, notes) of a renamed file or folder. */
-function moveStored<T>(
-    prefix: string,
-    family: (path: string) => ReturnType<typeof atomWithStorage<T>>,
-    empty: T,
-    from: string,
-    to: string,
-) {
+/** Moves pause states of a renamed file or folder. */
+function movePauses(from: string, to: string) {
     const source = normalizePath(from);
     const dest = normalizePath(to);
     const moves: [string, string][] = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (!key?.startsWith(prefix)) continue;
-        const file = key.slice(prefix.length);
+        if (!key?.startsWith(PAUSE_PREFIX)) continue;
+        const file = key.slice(PAUSE_PREFIX.length);
         if (file === source) moves.push([file, dest]);
         else if (file.startsWith(`${source}/`))
             moves.push([file, `${dest}${file.slice(source.length)}`]);
     }
     const store = getDefaultStore();
     for (const [oldFile, newFile] of moves) {
-        const value = store.get(family(oldFile));
-        store.set(family(newFile), value);
-        store.set(family(oldFile), empty);
-        localStorage.removeItem(`${prefix}${oldFile}`);
+        const state = store.get(pauseAtomFamily(oldFile));
+        store.set(pauseAtomFamily(newFile), state);
+        store.set(pauseAtomFamily(oldFile), null);
+        localStorage.removeItem(`${PAUSE_PREFIX}${oldFile}`);
     }
-}
-
-function movePauses(from: string, to: string) {
-    moveStored<PauseState | null>(PAUSE_PREFIX, pauseAtomFamily, null, from, to);
-    moveStored<Note[]>(NOTES_PREFIX, notesAtomFamily, [], from, to);
 }
 
 function readDeck(key: string): PracticeData | null {
@@ -212,7 +156,6 @@ export function decksOfFile(path: string): Record<number, PracticeData> {
 /** Deletes the practice decks of a PGN file (e.g. when the file is deleted). */
 export function removeDecks(path: string): void {
     setPauseState(path, null);
-    setNotes(path, []);
     const target = normalizePath(path);
     const store = getDefaultStore();
     const keys: { key: string; file: string; game: number }[] = [];
