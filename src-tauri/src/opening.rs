@@ -2,6 +2,8 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use shakmaty::{fen::Fen, san::San, Chess, EnPassantMode, Position, Setup};
 
+use std::collections::HashMap;
+
 use lazy_static::lazy_static;
 use specta::Type;
 use strsim::{jaro_winkler, sorensen_dice};
@@ -79,6 +81,38 @@ pub fn get_opening_from_setup(setup: Setup) -> Result<String, Error> {
         .find(|o| o.setup == setup)
         .map(|o| o.name.clone())
         .ok_or_else(|| Error::NoOpeningFound)
+}
+
+/// Position without move counters, so that transpositions find their opening too.
+fn position_key(setup: &Setup) -> Option<String> {
+    let mut setup = setup.clone();
+    setup.halfmoves = 0;
+    setup.fullmoves = std::num::NonZeroU32::MIN;
+    Fen::try_from_setup(setup).ok().map(|f| f.to_string())
+}
+
+/// Opening name of each game (its SAN moves from the starting position): the name of
+/// the last position of the game, among its first 40 moves, found in the table.
+#[tauri::command]
+#[specta::specta]
+pub async fn opening_names(games: Vec<Vec<String>>) -> Result<Vec<Option<String>>, Error> {
+    Ok(games.iter().map(|moves| opening_of_moves(moves)).collect())
+}
+
+fn opening_of_moves(moves: &[String]) -> Option<String> {
+    let mut pos = Chess::default();
+    let mut name = None;
+    for token in moves.iter().take(80) {
+        let Ok(san) = token.parse::<San>() else { break };
+        let Ok(m) = san.to_move(&pos) else { break };
+        pos.play_unchecked(m);
+        if let Some(key) = position_key(&pos.to_setup(EnPassantMode::Legal)) {
+            if let Some(found) = OPENING_BY_POSITION.get(&key) {
+                name = Some(found.clone());
+            }
+        }
+    }
+    name
 }
 
 #[tauri::command]
@@ -166,6 +200,19 @@ lazy_static! {
         }
         positions
     };
+    static ref OPENING_BY_POSITION: HashMap<String, String> = {
+        let mut map = HashMap::new();
+        for opening in OPENINGS.iter() {
+            if opening.pgn.is_none() {
+                continue;
+            }
+            if let Some(key) = position_key(&opening.setup) {
+                // The first name listed for a position wins, as in the lookups above.
+                map.entry(key).or_insert_with(|| opening.name.clone());
+            }
+        }
+        map
+    };
 }
 
 #[cfg(test)]
@@ -178,5 +225,24 @@ mod tests {
             get_opening_from_fen("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR b kq - 1 2")
                 .unwrap();
         assert_eq!(opening, "Bongcloud Attack");
+    }
+
+    #[test]
+    fn test_opening_names() {
+        let moves = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        let names = tauri::async_runtime::block_on(opening_names(vec![
+            moves("e4 c6 d4 d5 exd5 cxd5 c4 Nf6 Nc3 e6 Nf3 Bb4 Bd3 O-O O-O h6 a3 Bxc3"),
+            moves("e4 c5 c3"),
+            moves("Nf3 d5 g3"),
+            // Transposition: Caro-Kann Panov by another order.
+            moves("c4 c6 e4 d5 exd5 cxd5 d4"),
+            vec![],
+        ]))
+        .unwrap();
+        assert!(names[0].as_deref().unwrap().starts_with("Caro-Kann Defense: Panov"));
+        assert_eq!(names[1].as_deref(), Some("Sicilian Defense: Alapin Variation"));
+        assert!(names[2].is_some());
+        assert!(names[3].as_deref().unwrap().starts_with("Caro-Kann Defense: Panov"));
+        assert_eq!(names[4], None);
     }
 }

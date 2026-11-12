@@ -150,6 +150,14 @@ async getOpeningFromFens(fens: string[]) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async openingNames(games: string[][]) : Promise<Result<(string | null)[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("opening_names", { games }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getOpeningFromName(name: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_opening_from_name", { name }) };

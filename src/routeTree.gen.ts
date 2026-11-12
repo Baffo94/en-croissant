@@ -15,6 +15,7 @@ import { Route as EnginesRouteImport } from './routes/engines'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as RepertoiresRouteImport } from './routes/repertoires'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StatisticsRouteImport } from './routes/statistics'
 import { Route as DatabasesIndexRouteImport } from './routes/databases/index'
 import { Route as DatabasesDatabaseIdRouteImport } from './routes/databases/$databaseId'
 
@@ -48,6 +49,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StatisticsRoute = StatisticsRouteImport.update({
+  id: '/statistics',
+  path: '/statistics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DatabasesIndexRoute = DatabasesIndexRouteImport.update({
   id: '/databases/',
   path: '/databases/',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
   '/settings': typeof SettingsRoute
+  '/statistics': typeof StatisticsRoute
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
   '/databases/': typeof DatabasesIndexRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
   '/settings': typeof SettingsRoute
+  '/statistics': typeof StatisticsRoute
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
   '/databases': typeof DatabasesIndexRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
   '/settings': typeof SettingsRoute
+  '/statistics': typeof StatisticsRoute
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
   '/databases/': typeof DatabasesIndexRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/repertoires'
     | '/settings'
+    | '/statistics'
     | '/databases/$databaseId'
     | '/databases/'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/repertoires'
     | '/settings'
+    | '/statistics'
     | '/databases/$databaseId'
     | '/databases'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/repertoires'
     | '/settings'
+    | '/statistics'
     | '/databases/$databaseId'
     | '/databases/'
   fileRoutesById: FileRoutesById
@@ -130,6 +142,7 @@ export interface RootRouteChildren {
   FilesRoute: typeof FilesRoute
   RepertoiresRoute: typeof RepertoiresRoute
   SettingsRoute: typeof SettingsRoute
+  StatisticsRoute: typeof StatisticsRoute
   DatabasesDatabaseIdRoute: typeof DatabasesDatabaseIdRoute
   DatabasesIndexRoute: typeof DatabasesIndexRoute
 }
@@ -178,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/statistics': {
+      id: '/statistics'
+      path: '/statistics'
+      fullPath: '/statistics'
+      preLoaderRoute: typeof StatisticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/databases/': {
       id: '/databases/'
       path: '/databases'
@@ -202,6 +222,7 @@ const rootRouteChildren: RootRouteChildren = {
   FilesRoute: FilesRoute,
   RepertoiresRoute: RepertoiresRoute,
   SettingsRoute: SettingsRoute,
+  StatisticsRoute: StatisticsRoute,
   DatabasesDatabaseIdRoute: DatabasesDatabaseIdRoute,
   DatabasesIndexRoute: DatabasesIndexRoute,
 }
