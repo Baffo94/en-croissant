@@ -3,6 +3,7 @@
 // can be unit tested and reused by the mobile app.
 
 import type { PracticeData } from "@/components/files/opening";
+import { isValidFlag, type ReviewFlag } from "@/utils/flags";
 
 /** Remote folder that mirrors the local sync folder (PGN + .info files). */
 export const REPERTOIRES_PREFIX = "repertoires/";
@@ -19,6 +20,8 @@ export type ProgressFile = {
     games: Record<string, PracticeData>;
     /** Whether the repertoire is paused (left out of reviews); absent = never paused. */
     pause?: PauseState;
+    /** Moves flagged to review (merged by id between devices); absent = none. */
+    flags?: ReviewFlag[];
 };
 
 /** Pause state of a repertoire, synced between devices: the latest change wins. */
@@ -269,6 +272,7 @@ export function isEmptyDeck(deck: PracticeData): boolean {
 export function serializeProgress(
     games: Record<string, PracticeData>,
     pause: PauseState | null = null,
+    flags: readonly ReviewFlag[] = [],
 ): string {
     const sorted: Record<string, PracticeData> = {};
     for (const key of Object.keys(games).sort((a, b) => Number(a) - Number(b))) {
@@ -278,6 +282,7 @@ export function serializeProgress(
         version: PROGRESS_VERSION,
         games: sorted,
         ...(pause ? { pause } : {}),
+        ...(flags.length ? { flags: [...flags] } : {}),
     };
     return `${JSON.stringify(canonical(file), null, 2)}\n`;
 }
@@ -307,6 +312,7 @@ export function parseProgress(text: string): Record<string, PracticeData> {
 export function parseProgressFile(text: string): {
     games: Record<string, PracticeData>;
     pause: PauseState | null;
+    flags: ReviewFlag[];
 } {
     const parsed = JSON.parse(text) as Partial<ProgressFile>;
     if (
@@ -330,7 +336,8 @@ export function parseProgressFile(text: string): {
         typeof parsed.pause.changedAt === "string"
             ? parsed.pause
             : null;
-    return { games, pause };
+    const flags = Array.isArray(parsed.flags) ? parsed.flags.filter(isValidFlag) : [];
+    return { games, pause, flags };
 }
 
 // ---------------------------------------------------------------------------

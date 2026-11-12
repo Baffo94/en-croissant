@@ -6,6 +6,7 @@ import { getDefaultStore, useAtomValue } from "jotai";
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import type { PracticeData } from "@/components/files/opening";
 import { deckAtomFamily } from "@/state/atoms";
+import { mergeFlags, type ReviewFlag } from "@/utils/flags";
 import {
     emptyDeck,
     isPaused,
@@ -59,25 +60,64 @@ export function usePaused(path: string): boolean {
     return isPaused(useAtomValue(pauseAtomFamily(normalizePath(path))));
 }
 
-/** Moves pause states of a renamed file or folder. */
+// ---------------------------------------------------------------------------
+// Moves flagged to review: "repertoire-flags-<normalised path>" -> ReviewFlag[]
+// ---------------------------------------------------------------------------
+
+const FLAGS_PREFIX = "repertoire-flags-";
+
+const flagsAtomFamily = atomFamily((normalizedPath: string) =>
+    atomWithStorage<ReviewFlag[]>(`${FLAGS_PREFIX}${normalizedPath}`, [], undefined, {
+        getOnInit: true,
+    }),
+);
+
+/** Atom holding the flags of a repertoire (resolved ones included). */
+export function flagsAtomOf(path: string) {
+    return flagsAtomFamily(normalizePath(path));
+}
+
+export function getFlags(path: string): ReviewFlag[] {
+    return getDefaultStore().get(flagsAtomFamily(normalizePath(path)));
+}
+
+export function setFlags(path: string, flags: ReviewFlag[]): void {
+    const atom = flagsAtomFamily(normalizePath(path));
+    getDefaultStore().set(atom, flags);
+    if (flags.length === 0) localStorage.removeItem(`${FLAGS_PREFIX}${normalizePath(path)}`);
+}
+
+/** Moves the pause states and flags of a renamed file or folder. */
 function movePauses(from: string, to: string) {
     const source = normalizePath(from);
     const dest = normalizePath(to);
-    const moves: [string, string][] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key?.startsWith(PAUSE_PREFIX)) continue;
-        const file = key.slice(PAUSE_PREFIX.length);
-        if (file === source) moves.push([file, dest]);
-        else if (file.startsWith(`${source}/`))
-            moves.push([file, `${dest}${file.slice(source.length)}`]);
-    }
     const store = getDefaultStore();
-    for (const [oldFile, newFile] of moves) {
-        const state = store.get(pauseAtomFamily(oldFile));
-        store.set(pauseAtomFamily(newFile), state);
-        store.set(pauseAtomFamily(oldFile), null);
-        localStorage.removeItem(`${PAUSE_PREFIX}${oldFile}`);
+    for (const prefix of [PAUSE_PREFIX, FLAGS_PREFIX]) {
+        const moves: [string, string][] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key?.startsWith(prefix)) continue;
+            const file = key.slice(prefix.length);
+            if (file === source) moves.push([file, dest]);
+            else if (file.startsWith(`${source}/`))
+                moves.push([file, `${dest}${file.slice(source.length)}`]);
+        }
+        for (const [oldFile, newFile] of moves) {
+            if (prefix === PAUSE_PREFIX) {
+                store.set(pauseAtomFamily(newFile), store.get(pauseAtomFamily(oldFile)));
+                store.set(pauseAtomFamily(oldFile), null);
+            } else {
+                store.set(
+                    flagsAtomFamily(newFile),
+                    mergeFlags(
+                        store.get(flagsAtomFamily(newFile)),
+                        store.get(flagsAtomFamily(oldFile)),
+                    ),
+                );
+                store.set(flagsAtomFamily(oldFile), []);
+            }
+            localStorage.removeItem(`${prefix}${oldFile}`);
+        }
     }
 }
 

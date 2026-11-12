@@ -11,6 +11,7 @@ import {
     type SyncEnv,
     type SyncSummary,
 } from "@/utils/sync/engine";
+import { mergeFlags } from "@/utils/flags";
 import { emptyDeck, mergeDecks } from "@/utils/sync/core";
 import { GitHubClient } from "@/utils/sync/github";
 import { gitBlobSha } from "@/utils/sync/core";
@@ -64,7 +65,9 @@ const memoryEnv: SyncEnv = {
             delete decks[rel];
             const pauses = { ...s.pauses };
             delete pauses[rel];
-            return { ...s, files, decks, pauses };
+            const flags = { ...s.flags };
+            delete flags[rel];
+            return { ...s, files, decks, pauses, flags };
         });
     },
     getDecks(rel) {
@@ -87,11 +90,22 @@ const memoryEnv: SyncEnv = {
                 pauses[to] = pauses[from];
                 delete pauses[from];
             }
-            return { ...s, decks, pauses };
+            const flags = { ...s.flags };
+            if (flags[from]) {
+                flags[to] = mergeFlags(flags[to] ?? [], flags[from]);
+                delete flags[from];
+            }
+            return { ...s, decks, pauses, flags };
         });
     },
     getPause(rel) {
         return getState().pauses?.[rel] ?? null;
+    },
+    getFlags(rel) {
+        return structuredClone(getState().flags?.[rel] ?? []);
+    },
+    setFlags(rel, flags) {
+        updateState((s) => ({ ...s, flags: { ...s.flags, [rel]: flags } }));
     },
     setPause(rel, state) {
         updateState((s) => ({ ...s, pauses: { ...s.pauses, [rel]: state } }));

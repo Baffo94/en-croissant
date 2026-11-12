@@ -31,6 +31,7 @@ import {
   IconCloud,
   IconCloudCheck,
   IconDots,
+  IconFlag,
   IconFolder,
   IconFolderOpen,
   IconFolderSymlink,
@@ -95,6 +96,7 @@ import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 import { CheckPanel, useOpenIssues } from "./CheckPanel";
 import { GamesPanel } from "./GamesPanel";
+import { FlagsPanel, useAllFlags } from "./FlagsPanel";
 import { IdeasModal } from "./IdeasModal";
 import { type CheckFile, checkRunAtom, startCheck } from "./checkRunner";
 import {
@@ -350,7 +352,25 @@ type FileActions = {
   onDelete: (file: RepertoireFile) => void;
   onCheck: (file: RepertoireFile) => void;
   onIdeas: (file: RepertoireFile) => void;
+  /** Open moves flagged to review in a file, and what to do on click. */
+  flagsOf: (file: RepertoireFile) => number;
+  onFlags: () => void;
 };
+
+/** Red flag with the number of moves to review (shown only when there are some). */
+function FlagsButton({ file, actions }: { file: RepertoireFile; actions: FileActions }) {
+  const { t } = useTranslation();
+  const count = actions.flagsOf(file);
+  if (!count) return null;
+  const label = t("Repertoires.Flags.Count", { count });
+  return (
+    <Tooltip label={label}>
+      <ActionIcon variant="light" color="red" aria-label={label} onClick={actions.onFlags}>
+        <IconFlag size="1rem" />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
 
 /** Button of a section's ideas: lit when the section has some. */
 function IdeasButton({
@@ -493,6 +513,7 @@ function RepertoireCard({
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
             </Tooltip>
           )}
+          <FlagsButton file={file} actions={actions} />
           <IdeasButton file={file} count={info?.ideas ?? 0} actions={actions} />
           <FileMenu file={file} paused={paused} actions={actions} />
         </Group>
@@ -597,6 +618,7 @@ function SectionRow({
         <StatusBadges {...state} size="xs" />
       </Stack>
       <Group gap={2} wrap="nowrap">
+        <FlagsButton file={file} actions={actions} />
         <IdeasButton file={file} count={ideas} actions={actions} />
         <Tooltip
           label={
@@ -815,7 +837,7 @@ export default function RepertoiresPage() {
   const [ideasFor, setIdeasFor] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
-  const [view, setView] = useState<"list" | "check" | "games">("list");
+  const [view, setView] = useState<"list" | "check" | "games" | "flags">("list");
   const checkRun = useAtomValue(checkRunAtom);
   const issuesOf = useOpenIssues();
   /** "all" for Train all, a group key for a group, null when nothing is starting. */
@@ -905,6 +927,20 @@ export default function RepertoiresPage() {
   const openIssues = (files ?? []).reduce((n, f) => n + issuesOf(f.path), 0);
 
   // Repertoires as the check sees them: answers are compared inside a group only.
+  const flagFiles = useMemo(
+    () => (files ?? []).map((f) => ({ path: f.path, label: practiceLabel(f) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [files],
+  );
+  const allFlags = useAllFlags(flagFiles);
+  const openFlagsOf = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const { file, flag } of allFlags)
+      if (!flag.resolvedAt) counts[file.path] = (counts[file.path] ?? 0) + 1;
+    return counts;
+  }, [allFlags]);
+  const openFlagCount = Object.values(openFlagsOf).reduce((a, b) => a + b, 0);
+
   const checkFiles: CheckFile[] = useMemo(
     () =>
       (files ?? []).map((f) => ({
@@ -1060,6 +1096,8 @@ export default function RepertoiresPage() {
       startCheck(checkFiles, [file.path], practiceLabel(file));
     },
     onIdeas: setIdeasFor,
+    flagsOf: (file) => openFlagsOf[file.path] ?? 0,
+    onFlags: () => setView("flags"),
   };
 
   const groupActions: GroupActions = {
@@ -1168,10 +1206,33 @@ export default function RepertoiresPage() {
           <Tabs.Tab value="games" leftSection={<IconChess size="1rem" />}>
             {t("Repertoires.Tab.Games")}
           </Tabs.Tab>
+          <Tabs.Tab
+            value="flags"
+            leftSection={<IconFlag size="1rem" />}
+            rightSection={
+              openFlagCount > 0 ? (
+                <Badge size="xs" color="red" variant="filled">
+                  {openFlagCount}
+                </Badge>
+              ) : null
+            }
+          >
+            {t("Repertoires.Tab.Flags")}
+          </Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
-      {view === "games" ? (
+      {view === "flags" ? (
+        <ScrollArea flex={1} px="lg" pb="lg">
+          <FlagsPanel
+            files={flagFiles}
+            onOpen={(path, game, line) => {
+              const file = files?.find((f) => f.path === path);
+              if (file) openRepertoire(file, false, { game, line });
+            }}
+          />
+        </ScrollArea>
+      ) : view === "games" ? (
         <ScrollArea flex={1} px="lg" pb="lg">
           <GamesPanel
             files={checkFiles}

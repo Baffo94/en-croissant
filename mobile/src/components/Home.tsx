@@ -4,6 +4,7 @@ import { setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow, useSyncStatus } from "../sync";
 import { ideaPoints } from "@/utils/ideas";
 import { getGameComment } from "../comments";
+import { useOpenFlagCount } from "../reviewFlags";
 import { Header } from "./Practice";
 
 const PAUSE_SYNC_DELAY = 3_000;
@@ -197,6 +198,7 @@ export function Home({
   const pauses = useAppState((s) => s.pauses);
   const lastSync = useAppState((s) => s.manifest?.lastSync ?? null);
   const status = useSyncStatus();
+  const openFlags = useOpenFlagCount();
   const [expanded, toggle] = useExpandedGroups();
   // Recomputed every minute: positions answered wrongly become due again shortly.
   const [tick, setTick] = useState(0);
@@ -299,6 +301,12 @@ export function Home({
               </button>
             )}
           </div>
+          {openFlags > 0 && (
+            <p className="flag-summary">
+              🚩 {openFlags === 1 ? "1 mossa segnalata" : `${openFlags} mosse segnalate`} da
+              rivedere sul PC
+            </p>
+          )}
           <ul className="list">{activeItems.map(renderItem)}</ul>
           <p className="legend">
             Totale: <span className="pill due">{totals.due}</span> da ripassare ·{" "}

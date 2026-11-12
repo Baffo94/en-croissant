@@ -587,6 +587,18 @@
     "Repertoires.Due_other": "",
     "Repertoires.DuplicateNames": "",
     "Repertoires.Empty": "",
+    "Repertoires.Flags.Count_one": "",
+    "Repertoires.Flags.Count_many": "",
+    "Repertoires.Flags.Count_other": "",
+    "Repertoires.Flags.Edit": "",
+    "Repertoires.Flags.From": "",
+    "Repertoires.Flags.Help": "",
+    "Repertoires.Flags.None": "",
+    "Repertoires.Flags.Open": "",
+    "Repertoires.Flags.Resolve": "",
+    "Repertoires.Flags.ResolvedOn": "",
+    "Repertoires.Flags.Save": "",
+    "Repertoires.Flags.ShowResolved": "",
     "Repertoires.Games_one": "",
     "Repertoires.Games_many": "",
     "Repertoires.Games_other": "",
@@ -695,6 +707,7 @@
     "Repertoires.Summary_other": "",
     "Repertoires.Synced": "",
     "Repertoires.Tab.Check": "",
+    "Repertoires.Tab.Flags": "",
     "Repertoires.Tab.Games": "",
     "Repertoires.Tab.List": "",
     "Repertoires.Title": "",
@@ -1015,5 +1028,32 @@
     "TimeControl.Correspondence": "Correspondência",
     "TimeControl.Rapid": "Semi-Rápidas",
     "TimeControl.UltraBullet": "UltraBullet"
+  },
+  "2026-11-13T10": {
+    "00:00Z": ""
+  },
+  "2026-11-13T11": {
+    "00:00Z": ""
+  },
+  "2026-11-13T12": {
+    "00:00Z": ""
+  },
+  "2026-11-14T10": {
+    "00:00Z": ""
+  },
+  "2026-11-01T00": {
+    "00:00Z": ""
+  },
+  "2026-11-02T00": {
+    "00:00Z": ""
+  },
+  "2026-11-03T00": {
+    "00:00Z": ""
+  },
+  "2026-11-05T00": {
+    "00:00Z": ""
+  },
+  "2027-03-01T00": {
+    "00:00Z": ""
   }
 }

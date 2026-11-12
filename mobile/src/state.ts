@@ -4,6 +4,7 @@
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
+import type { ReviewFlag } from "@/utils/flags";
 import type { PauseState } from "@/utils/sync/core";
 import type { SyncManifest } from "@/utils/sync/engine";
 import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
@@ -36,6 +37,8 @@ export type AppState = {
     commentEdits?: Record<string, CommentEdit[]>;
     /** relPgn -> pause state (synced through the progress files). */
     pauses: Record<string, PauseState>;
+    /** relPgn -> moves flagged to review (synced through the progress files). */
+    flags?: Record<string, ReviewFlag[]>;
 };
 
 const FILE = "state.json";

@@ -591,6 +591,17 @@
     "Repertoires.Due_other": "{{count}} due",
     "Repertoires.DuplicateNames": "The names must be different",
     "Repertoires.Empty": "No repertoires yet. Create one, or mark a PGN file as Repertoire in the Files section.",
+    "Repertoires.Flags.Count_one": "{{count}} move flagged to review",
+    "Repertoires.Flags.Count_other": "{{count}} moves flagged to review",
+    "Repertoires.Flags.Edit": "Edit the note",
+    "Repertoires.Flags.From": "Flagged from {{device}} on {{date}}",
+    "Repertoires.Flags.Help": "Moves flagged on the phone (🚩 Flag to review) with their note. \"Open\" opens the section on that position; \"Resolved\" removes it from the list on the phone too.",
+    "Repertoires.Flags.None": "No moves to review.",
+    "Repertoires.Flags.Open": "Open",
+    "Repertoires.Flags.Resolve": "Resolved",
+    "Repertoires.Flags.ResolvedOn": "resolved on {{date}}",
+    "Repertoires.Flags.Save": "Save",
+    "Repertoires.Flags.ShowResolved": "Show resolved ones too",
     "Repertoires.Games_one": "{{count}} game",
     "Repertoires.Games_other": "{{count}} games",
     "Repertoires.Games.Accounts": "Accounts compared",
@@ -695,6 +706,7 @@
     "Repertoires.Summary_other": "{{count}} positions to practice today",
     "Repertoires.Synced": "Synced with GitHub",
     "Repertoires.Tab.Check": "Check",
+    "Repertoires.Tab.Flags": "To review",
     "Repertoires.Tab.Games": "Games",
     "Repertoires.Tab.List": "Repertoires",
     "Repertoires.Title": "Repertoires",
@@ -1112,5 +1124,32 @@
     "TimeControl.Correspondence": "Correspondence",
     "TimeControl.Rapid": "Rapid",
     "TimeControl.UltraBullet": "UltraBullet"
+  },
+  "2026-11-13T10": {
+    "00:00Z": ""
+  },
+  "2026-11-13T11": {
+    "00:00Z": ""
+  },
+  "2026-11-13T12": {
+    "00:00Z": ""
+  },
+  "2026-11-14T10": {
+    "00:00Z": ""
+  },
+  "2026-11-01T00": {
+    "00:00Z": ""
+  },
+  "2026-11-02T00": {
+    "00:00Z": ""
+  },
+  "2026-11-03T00": {
+    "00:00Z": ""
+  },
+  "2026-11-05T00": {
+    "00:00Z": ""
+  },
+  "2027-03-01T00": {
+    "00:00Z": ""
   }
 }

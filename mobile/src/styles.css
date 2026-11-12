@@ -965,3 +965,48 @@ button.pause-toggle {
 .ideas-list li {
   margin-bottom: 8px;
 }
+
+/* Moves flagged to review on the PC */
+.flag-add {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.flag-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  font-size: 0.85rem;
+}
+
+.flag-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.flag-actions button {
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.flag-summary {
+  margin: 4px 16px 0;
+  font-size: 0.85rem;
+  color: var(--orange);
+}

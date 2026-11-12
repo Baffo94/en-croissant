@@ -11,7 +11,9 @@ import { cloudEval } from "../cloudEval";
 import { type Analysis as EngineAnalysis, Engine, formatScore, pvToSan, whiteBar } from "../engine";
 import { Board } from "./Board";
 import { ExplorerPanel } from "./ExplorerPanel";
+import type { FlagProps } from "../reviewFlags";
 import { CommentItem } from "./CommentItem";
+import { FlagItem } from "./FlagItem";
 import { Header } from "./Practice";
 
 type Ply = { san: string; uci: string; fen: string };
@@ -47,6 +49,7 @@ export function Analysis({
   initialPly,
   orientation,
   onEditComment,
+  flagFor,
   onBack,
 }: {
   startFen: string;
@@ -58,6 +61,8 @@ export function Analysis({
   orientation: "white" | "black";
   /** Saves the comment of repertoire move number `ply` (1 = first move of `moves`). */
   onEditComment?: (ply: number, text: string) => boolean;
+  /** Flag "to review on the PC" of the move reached by `line` (SAN from the start). */
+  flagFor?: (line: string[]) => FlagProps;
   onBack: () => void;
 }) {
   useBackHandler(onBack);
@@ -280,7 +285,18 @@ export function Analysis({
         const fromRepertoire =
           i >= 0 && i < moves.length && history.slice(0, ply).every((p, j) => p.san === moves[j]);
         const note = fromRepertoire ? comments[i] : "";
-        if (!fromRepertoire || (!note && !onEditComment)) return null;
+        const flag =
+          i >= 0 && flagFor ? flagFor(history.slice(0, ply).map((p) => p.san)) : undefined;
+        if (!fromRepertoire) {
+          // A move outside the repertoire can be flagged too (e.g. "what if 7...Re8?").
+          if (!flag) return null;
+          return (
+            <div className="notes analysis-note">
+              <FlagItem key={ply} {...flag} />
+            </div>
+          );
+        }
+        if (!note && !onEditComment && !flag) return null;
         return (
           <div className="notes analysis-note">
             <CommentItem
@@ -288,6 +304,7 @@ export function Analysis({
               label={history[i].san}
               text={note}
               onSave={onEditComment ? (text) => onEditComment(ply, text) : undefined}
+              flag={flag}
             />
           </div>
         );

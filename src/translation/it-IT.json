@@ -587,6 +587,18 @@
     "Repertoires.Due_other": "{{count}} da ripassare",
     "Repertoires.DuplicateNames": "I nomi devono essere diversi",
     "Repertoires.Empty": "Nessun repertorio. Creane uno, oppure segna un file PGN come Repertorio nella sezione File.",
+    "Repertoires.Flags.Count_one": "{{count}} mossa segnalata da rivedere",
+    "Repertoires.Flags.Count_many": "",
+    "Repertoires.Flags.Count_other": "{{count}} mosse segnalate da rivedere",
+    "Repertoires.Flags.Edit": "Modifica la nota",
+    "Repertoires.Flags.From": "Segnalata da {{device}} il {{date}}",
+    "Repertoires.Flags.Help": "Le mosse segnalate dal telefono (🚩 Segnala da rivedere) con la loro nota. \"Apri\" porta la sezione su quella posizione; \"Risolta\" la toglie dall'elenco anche sul telefono.",
+    "Repertoires.Flags.None": "Nessuna mossa da rivedere.",
+    "Repertoires.Flags.Open": "Apri",
+    "Repertoires.Flags.Resolve": "Risolta",
+    "Repertoires.Flags.ResolvedOn": "risolta il {{date}}",
+    "Repertoires.Flags.Save": "Salva",
+    "Repertoires.Flags.ShowResolved": "Mostra anche le risolte",
     "Repertoires.Games_one": "{{count}} partita",
     "Repertoires.Games_many": "",
     "Repertoires.Games_other": "{{count}} partite",
@@ -703,6 +715,7 @@
     "Repertoires.Summary_other": "{{count}} posizioni da allenare oggi",
     "Repertoires.Synced": "Sincronizzato con GitHub",
     "Repertoires.Tab.Check": "Controllo",
+    "Repertoires.Tab.Flags": "Da rivedere",
     "Repertoires.Tab.Games": "Partite",
     "Repertoires.Tab.List": "Repertori",
     "Repertoires.Title": "Repertori",
@@ -1090,5 +1103,32 @@
     "TimeControl.Correspondence": "Corrispondenza",
     "TimeControl.Rapid": "Rapid",
     "TimeControl.UltraBullet": "UltraBullet"
+  },
+  "2026-11-13T10": {
+    "00:00Z": ""
+  },
+  "2026-11-13T11": {
+    "00:00Z": ""
+  },
+  "2026-11-13T12": {
+    "00:00Z": ""
+  },
+  "2026-11-14T10": {
+    "00:00Z": ""
+  },
+  "2026-11-01T00": {
+    "00:00Z": ""
+  },
+  "2026-11-02T00": {
+    "00:00Z": ""
+  },
+  "2026-11-03T00": {
+    "00:00Z": ""
+  },
+  "2026-11-05T00": {
+    "00:00Z": ""
+  },
+  "2027-03-01T00": {
+    "00:00Z": ""
   }
 }

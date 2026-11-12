@@ -9,7 +9,7 @@ import { atom, getDefaultStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { deckAtomFamily, type PracticeData } from "@/state/atoms";
 import { getDocumentDir } from "@/utils/directories";
-import { getPause, moveDecks, setPauseState } from "@/utils/practiceDecks";
+import { getFlags, getPause, moveDecks, setFlags, setPauseState } from "@/utils/practiceDecks";
 import {
     baseName,
     emptyDeck,
@@ -225,6 +225,8 @@ export function createTauriEnv(folder: string): SyncEnv {
             return decks;
         },
         getPause: (relPgn) => getPause(abs(relPgn)),
+        getFlags: (relPgn) => getFlags(abs(relPgn)),
+        setFlags: (relPgn, flags) => setFlags(abs(relPgn), flags),
         setPause: (relPgn, state) => setPauseState(abs(relPgn), state),
         moveDecks(fromRel, toRel) {
             const moved = moveDecks(abs(fromRel), abs(toRel));

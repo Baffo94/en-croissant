@@ -20,6 +20,7 @@ import {
     runSync,
     type SyncEnv,
 } from "../sync/engine";
+import { flagAt, type ReviewFlag, resolveFlag, setFlag } from "../flags";
 import { setMoveComment } from "../pgnEdit";
 import { GitHubClient, GitHubError, type NewTreeEntry, type TreeEntry } from "../sync/github";
 
@@ -272,6 +273,13 @@ class MemoryEnv implements SyncEnv {
     files = new Map<string, Uint8Array>();
     decks = new Map<string, Record<string, PracticeData>>();
     pauses = new Map<string, PauseState>();
+    flags = new Map<string, ReviewFlag[]>();
+    getFlags(rel: string) {
+        return structuredClone(this.flags.get(rel) ?? []);
+    }
+    setFlags(rel: string, flags: ReviewFlag[]) {
+        this.flags.set(rel, structuredClone(flags));
+    }
     getPause(rel: string) {
         return this.pauses.get(rel) ?? null;
     }
@@ -309,6 +317,11 @@ class MemoryEnv implements SyncEnv {
         if (pause) {
             this.pauses.set(to, pause);
             this.pauses.delete(from);
+        }
+        const flags = this.flags.get(from);
+        if (flags) {
+            this.flags.set(to, flags);
+            this.flags.delete(from);
         }
     }
     put(rel: string, text: string) {
@@ -788,6 +801,57 @@ describe("pause", () => {
         await runSync(pc, client(repo), first.manifest);
         expect(pc.getPause("Scozzese.pgn")?.paused).toBe(true);
         expect(parseProgressFile(repo.text("progress/Scozzese.json")!).pause?.paused).toBe(true);
+    });
+});
+
+describe("flags to review", () => {
+    test("a flag made on the phone reaches the PC; resolved on the PC it closes on the phone", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("Philidor.pgn", "1. e4 e5 2. Nf3 d6 3. d4 *");
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+        const phone = new MemoryEnv();
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("phone"), {
+            readOnlyContent: true,
+        });
+
+        const line = ["e4", "e5", "Nf3", "d6", "d4"];
+        phone.setFlags("Philidor.pgn", setFlag([], 0, line, "Meglio Dd2?", "Android"));
+        const phoneSecond = await runSync(phone, client(repo), phoneFirst.manifest, {
+            readOnlyContent: true,
+        });
+        expect(parseProgressFile(repo.text("progress/Philidor.json")!).flags).toHaveLength(1);
+
+        const pcSecond = await runSync(pc, client(repo), pcFirst.manifest);
+        const onPc = flagAt(pc.getFlags("Philidor.pgn"), 0, line);
+        expect(onPc?.text).toBe("Meglio Dd2?");
+        expect(onPc?.device).toBe("Android");
+
+        // Meanwhile the phone flags another move; the PC resolves the first one.
+        phone.setFlags(
+            "Philidor.pgn",
+            setFlag(phone.getFlags("Philidor.pgn"), 0, ["e4"], "Ok?", "Android"),
+        );
+        pc.setFlags("Philidor.pgn", resolveFlag(pc.getFlags("Philidor.pgn"), onPc!.id));
+        await runSync(pc, client(repo), pcSecond.manifest);
+        await runSync(phone, client(repo), phoneSecond.manifest, { readOnlyContent: true });
+        const final = phone.getFlags("Philidor.pgn");
+        expect(flagAt(final, 0, line)).toBeUndefined();
+        expect(flagAt(final, 0, ["e4"])?.text).toBe("Ok?");
+        expect(final.find((f) => f.id === onPc!.id)?.resolvedAt).toBeDefined();
+    });
+
+    test("flags follow a renamed repertoire", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("Scotch.pgn", "1. e4 *");
+        pc.setFlags("Scotch.pgn", setFlag([], 0, ["e4"], "Rivedere", "PC"));
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        pc.files.set("Scozzese.pgn", pc.files.get("Scotch.pgn")!);
+        pc.files.delete("Scotch.pgn");
+        await runSync(pc, client(repo), first.manifest);
+        expect(flagAt(pc.getFlags("Scozzese.pgn"), 0, ["e4"])?.text).toBe("Rivedere");
+        expect(parseProgressFile(repo.text("progress/Scozzese.json")!).flags).toHaveLength(1);
     });
 });
 

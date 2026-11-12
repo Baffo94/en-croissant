@@ -2,6 +2,7 @@
 // practice decks) and `GitHubClient` (remote), so the algorithm can be tested in memory.
 
 import type { PracticeData } from "@/components/files/opening";
+import { mergeFlags, type ReviewFlag } from "@/utils/flags";
 import {
     type ContentAction,
     conflictCopyPath,
@@ -36,6 +37,9 @@ export interface SyncEnv {
     /** Pause state of a PGN file in the sync folder (null = never paused). */
     getPause(relPgn: string): PauseState | null;
     setPause(relPgn: string, state: PauseState): void;
+    /** Moves flagged to review in a PGN file (resolved ones included, as tombstones). */
+    getFlags(relPgn: string): ReviewFlag[];
+    setFlags(relPgn: string, flags: ReviewFlag[]): void;
 }
 
 export type SyncManifest = {
@@ -328,11 +332,13 @@ export async function runSync(
         // was already merged into the local decks.
         let remoteGames: Record<string, PracticeData> = {};
         let remotePause: PauseState | null = null;
+        let remoteFlags: ReviewFlag[] = [];
         if (remoteSha && remoteSha !== previous.progress[progressPath]) {
             try {
                 const remote = parseProgressFile(decoder.decode(await blob(remoteSha)));
                 remoteGames = remote.games;
                 remotePause = remote.pause;
+                remoteFlags = remote.flags;
             } catch {
                 remoteGames = {};
             }
@@ -343,6 +349,14 @@ export async function runSync(
         const pause = newerPause(localPause, remotePause);
         if (pause && pause !== localPause) {
             env.setPause(relPgn, pause);
+            summary.progressUpdated++;
+        }
+
+        // Flags to review: union by id, the newest version of each wins.
+        const localFlags = env.getFlags(relPgn);
+        const flags = mergeFlags(localFlags, remoteFlags, now);
+        if (JSON.stringify(flags) !== JSON.stringify(localFlags)) {
+            env.setFlags(relPgn, flags);
             summary.progressUpdated++;
         }
 
@@ -358,11 +372,11 @@ export async function runSync(
             if (!isEmptyDeck(deck)) merged[game] = deck;
         }
 
-        if (Object.keys(merged).length === 0 && !pause) {
+        if (Object.keys(merged).length === 0 && !pause && flags.length === 0) {
             if (shaAtPath) progressManifest[progressPath] = shaAtPath;
             continue;
         }
-        const text = serializeProgress(merged, pause);
+        const text = serializeProgress(merged, pause, flags);
         const sha = await gitBlobSha(encoder.encode(text));
         if (sha !== shaAtPath) {
             entries.push({ path: progressPath, mode: "100644", type: "blob", content: text });

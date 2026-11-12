@@ -1,12 +1,20 @@
 import { useState } from "react";
+import type { FlagProps } from "../reviewFlags";
+import { FlagItem } from "./FlagItem";
 
-export type NoteItem = { label: string; text: string; onSave?: (text: string) => boolean };
+export type NoteItem = {
+  label: string;
+  text: string;
+  onSave?: (text: string) => boolean;
+  /** Flag "to review on the PC" of the move. */
+  flag?: FlagProps;
+};
 
 /**
  * Comment of a repertoire move. With `onSave` it can be edited (✏️): the text is
  * written in the PGN like a comment typed on the PC.
  */
-export function CommentItem({ label, text, onSave }: NoteItem) {
+export function CommentItem({ label, text, onSave, flag }: NoteItem) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const [error, setError] = useState(false);
@@ -37,22 +45,25 @@ export function CommentItem({ label, text, onSave }: NoteItem) {
     );
   }
   return (
-    <p>
-      <span className="notes-label">{label}</span>{" "}
-      {text.trim() ? text : <span className="dim">nessun commento</span>}
-      {onSave && (
-        <button
-          type="button"
-          className="comment-edit-btn"
-          aria-label={text.trim() ? "Modifica il commento" : "Aggiungi un commento"}
-          onClick={() => {
-            setDraft(text);
-            setEditing(true);
-          }}
-        >
-          ✏️
-        </button>
-      )}
-    </p>
+    <>
+      <p>
+        <span className="notes-label">{label}</span>{" "}
+        {text.trim() ? text : <span className="dim">nessun commento</span>}
+        {onSave && (
+          <button
+            type="button"
+            className="comment-edit-btn"
+            aria-label={text.trim() ? "Modifica il commento" : "Aggiungi un commento"}
+            onClick={() => {
+              setDraft(text);
+              setEditing(true);
+            }}
+          >
+            ✏️
+          </button>
+        )}
+      </p>
+      {flag && <FlagItem {...flag} />}
+    </>
   );
 }

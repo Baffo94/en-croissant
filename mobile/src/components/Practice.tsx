@@ -23,6 +23,7 @@ import { setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
 import { Ideas } from "./Ideas";
+import { flagProps, useFlags } from "../reviewFlags";
 import { Board } from "./Board";
 import { CommentItem, type NoteItem } from "./CommentItem";
 
@@ -201,6 +202,11 @@ export function Practice({
    * Writes the comment of `node` (reached by `line`) in the PGN, like on the PC, and
    * shows it at once. The sync uploads the file.
    */
+  const flags = useFlags(currentSource.source.rel);
+  /** Flag "to review on the PC" of the move reached by `line`. */
+  const flagOf = (line: string[]) =>
+    flagProps(flags, currentSource.source.rel, currentSource.source.game, line);
+
   const saveComment = (node: TreeNode | undefined, line: string[], text: string): boolean => {
     if (!node || line.length === 0) return false;
     const { rel, game } = currentSource.source;
@@ -331,6 +337,7 @@ export function Practice({
           );
           return true;
         }}
+        flagFor={(line) => flagOf(line)}
         initialPly={analysis.ply}
         orientation={pgn.orientation}
         onBack={() => setAnalysis(null)}
@@ -571,6 +578,10 @@ export function Practice({
                             text,
                           )
                       : undefined,
+                  flag:
+                    viewPly! > 0
+                      ? flagOf(nodes.slice(1, viewPly! + 1).map((n) => n.san ?? ""))
+                      : undefined,
                 },
               ]}
             />
@@ -637,6 +648,7 @@ export function Practice({
                       label: withSymbols(lastNode, lastNode.san ?? ""),
                       text: lastNode.comment ?? "",
                       onSave: (text: string) => saveComment(lastNode, lineSans, text),
+                      flag: flagOf(lineSans),
                     },
                   ]
                 : [{ label: "Inizio", text: pgn.root.comment ?? "" }]),
@@ -645,6 +657,7 @@ export function Practice({
                 text: answerNode?.comment ?? "",
                 onSave: (text: string) =>
                   saveComment(answerNode, [...lineSans, position.answer], text),
+                flag: flagOf([...lineSans, position.answer]),
               },
             ]}
           />
