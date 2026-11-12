@@ -62,6 +62,7 @@
     "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "Afficher les variantes",
     "Board.Analysis.ShowVariations.Desc": "Ajoutez les meilleures lignes de continuation pour les erreurs",
+    "Board.Analysis.StoredEvalHint": "",
     "Board.Analysis.SyncGlobally": "Synchronisation globale",
     "Board.Analysis.Tablebase": "Table de finales",
     "Board.Analysis.Tablebase.BlackWins": "Victoire des noirs",

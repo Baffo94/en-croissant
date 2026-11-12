@@ -60,6 +60,7 @@
     "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "显示变着",
     "Board.Analysis.ShowVariations.Desc": "为错着添加最佳续着线路",
+    "Board.Analysis.StoredEvalHint": "",
     "Board.Analysis.SyncGlobally": "全局同步",
     "Board.Analysis.Tablebase": "残局库",
     "Board.Analysis.Tablebase.BlackWins": "黑胜",

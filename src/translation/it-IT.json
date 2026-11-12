@@ -62,6 +62,7 @@
     "Board.Analysis.SearchingNovelties": "Cerco le novità nel database di riferimento…",
     "Board.Analysis.ShowVariations": "Mostra varianti",
     "Board.Analysis.ShowVariations.Desc": "Aggiungi le migliori linee per gli errori",
+    "Board.Analysis.StoredEvalHint": "Valutazione presa dal database locale: {{source}}, profondità {{depth}}. Il tuo motore la sostituisce quando va più a fondo, oppure da profondità 20 se gli hai chiesto più linee di quelle salvate.",
     "Board.Analysis.SyncGlobally": "Sincronizza tutto",
     "Board.Analysis.Tablebase": "Tablebase",
     "Board.Analysis.Tablebase.BlackWins": "Nero vince",

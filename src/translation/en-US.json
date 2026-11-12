@@ -61,6 +61,7 @@
     "Board.Analysis.SearchingNovelties": "Looking for novelties in the reference database…",
     "Board.Analysis.ShowVariations": "Show variations",
     "Board.Analysis.ShowVariations.Desc": "Add best continuation lines for mistakes",
+    "Board.Analysis.StoredEvalHint": "Evaluation from the local database: {{source}}, depth {{depth}}. Your engine replaces it once it goes deeper, or from depth 20 if you asked for more lines than are stored.",
     "Board.Analysis.SyncGlobally": "Sync globally",
     "Board.Analysis.Tablebase": "Tablebase",
     "Board.Analysis.Tablebase.BlackWins": "Black wins",

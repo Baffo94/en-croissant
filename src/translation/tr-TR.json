@@ -61,6 +61,7 @@
     "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "Varyantları göster",
     "Board.Analysis.ShowVariations.Desc": "Hatalar için en iyi devam varyantlarını ekle",
+    "Board.Analysis.StoredEvalHint": "",
     "Board.Analysis.SyncGlobally": "Global olarak senkron et",
     "Board.Analysis.Tablebase": "Oyun sonu tablosu",
     "Board.Analysis.Tablebase.BlackWins": "Siyah kazanır",

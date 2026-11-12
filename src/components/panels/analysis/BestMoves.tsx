@@ -1,6 +1,7 @@
 import {
   Accordion,
   ActionIcon,
+  Badge,
   Box,
   Code,
   Collapse,
@@ -15,6 +16,7 @@ import {
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
 import {
+  IconDatabase,
   IconGripVertical,
   IconPinned,
   IconPinnedOff,
@@ -42,6 +44,7 @@ import {
 } from "@/state/atoms";
 import { chessopsError, positionFromFen, swapMove } from "@/utils/chessops";
 import type { Engine } from "@/utils/engines";
+import { sourceLabel, storedSource } from "@/utils/evalCache";
 import { formatNodes } from "@/utils/format";
 import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
@@ -344,6 +347,7 @@ function EngineTop({
   const depth = isComputed ? engineVariations[0].depth : 0;
   const nodes = isComputed ? formatNodes(engineVariations[0].nodes, 2) : 0;
   const nps = isComputed ? formatNodes(engineVariations[0].nps, 1) : 0;
+  const stored = storedSource(engineVariations);
 
   return (
     <Group justify="space-between" wrap="nowrap">
@@ -351,11 +355,32 @@ function EngineTop({
         <Text fw="bold" fz="lg" lineClamp={1}>
           {name}
         </Text>
+        {stored && !isGameOver && (
+          <Tooltip
+            multiline
+            w={300}
+            label={t("Board.Analysis.StoredEvalHint", {
+              source: sourceLabel(stored.source),
+              depth: stored.depth,
+            })}
+          >
+            <Badge
+              size="sm"
+              variant="light"
+              color={stored.source === "lichess" ? "teal" : "blue"}
+              leftSection={<IconDatabase size="0.8rem" />}
+              style={{ flexShrink: 0 }}
+            >
+              {sourceLabel(stored.source)}
+            </Badge>
+          </Tooltip>
+        )}
         {enabled && !isGameOver && !error && !engineVariations && (
           <Code fz="xs">{t("Common.Loading")}</Code>
         )}
         {progress < 100 &&
           enabled &&
+          !stored &&
           !isGameOver &&
           engineVariations &&
           engineVariations.length > 0 && (
@@ -388,7 +413,7 @@ function EngineTop({
                 Nodes
               </Text>
               <Text fw="bold" fz="md">
-                {nodes}
+                {stored ? "—" : nodes}
               </Text>
             </Stack>
           </>

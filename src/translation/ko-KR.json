@@ -60,6 +60,7 @@
     "Board.Analysis.SearchingNovelties": "",
     "Board.Analysis.ShowVariations": "변형 수순 보기",
     "Board.Analysis.ShowVariations.Desc": "실수가 있다면 최선 수순을 추가합니다",
+    "Board.Analysis.StoredEvalHint": "",
     "Board.Analysis.SyncGlobally": "전역 동기화",
     "Board.Analysis.Tablebase": "테이블베이스",
     "Board.Analysis.Tablebase.BlackWins": "흑 승",

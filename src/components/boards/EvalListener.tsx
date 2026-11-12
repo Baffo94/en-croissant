@@ -250,7 +250,15 @@ function EngineListener({
             const pending = stored.current;
             commands.evalCacheGet(pending.fen).then((r) => {
               if (stored.current !== pending || r.status !== "ok" || !r.data?.lines.length) return;
-              pending.depth = r.data.depth;
+              // With fewer stored lines than asked for, the engine takes over as soon
+              // as its lines are worth showing (depth 20), instead of beyond the stored depth.
+              const wanted = Number(
+                settings.settings?.find((o) => o.name === "MultiPV")?.value ?? 1,
+              );
+              pending.depth =
+                r.data.lines.length >= wanted
+                  ? r.data.depth
+                  : Math.min(r.data.depth, MIN_STORED_DEPTH - 1);
               const lines = toBestMoves(r.data);
               setEngineVariation((prev) => new Map(prev).set(key, lines));
               if (firstEngineWithLines === engine.id || firstEngineWithLines === null)

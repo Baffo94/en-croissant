@@ -33,7 +33,26 @@ export function isOpeningFen(fen: string): boolean {
 }
 
 /** Stored lines as the engine gives them (scores from White's point of view). */
+/** Lines shown from the database, with where they came from ("lichess" or an engine). */
+const storedSources = new WeakMap<BestMoves[], { source: string; depth: number }>();
+
+/** Where the lines on screen came from, when they are a stored evaluation. */
+export function storedSource(lines: BestMoves[] | undefined) {
+    return lines ? storedSources.get(lines) : undefined;
+}
+
+/** Readable name of a stored evaluation's source. */
+export function sourceLabel(source: string) {
+    return source === "lichess" ? "Lichess" : source;
+}
+
 export function toBestMoves(stored: CachedEval): BestMoves[] {
+    const lines = toBestMovesLines(stored);
+    storedSources.set(lines, { source: stored.source, depth: stored.depth });
+    return lines;
+}
+
+function toBestMovesLines(stored: CachedEval): BestMoves[] {
     return stored.lines.map((l) => ({
         nodes: 0,
         depth: l.depth,

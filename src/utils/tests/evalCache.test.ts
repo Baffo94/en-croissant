@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { BestMoves } from "@/bindings";
-import { fenAfter, fromBestMoves, isOpeningFen, toBestMoves } from "@/utils/evalCache";
+import {
+    fenAfter,
+    fromBestMoves,
+    isOpeningFen,
+    sourceLabel,
+    storedSource,
+    toBestMoves,
+} from "@/utils/evalCache";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -45,5 +52,23 @@ describe("evaluation database helpers", () => {
             [{ type: "cp", value: 31 }, ["e4"], 1],
             [{ type: "mate", value: -4 }, ["d4"], 2],
         ]);
+    });
+});
+
+describe("storedSource", () => {
+    test("remembers where the lines on screen came from", () => {
+        const lines = toBestMoves({
+            depth: 45,
+            source: "lichess",
+            lichessChecked: true,
+            lines: [
+                { uciMoves: ["e2e4"], sanMoves: ["e4"], cp: 20, mate: null, depth: 45, multipv: 1 },
+            ],
+        });
+        expect(storedSource(lines)).toEqual({ source: "lichess", depth: 45 });
+        expect(storedSource([...lines])).toBeUndefined();
+        expect(storedSource(undefined)).toBeUndefined();
+        expect(sourceLabel("lichess")).toBe("Lichess");
+        expect(sourceLabel("Stockfish 17")).toBe("Stockfish 17");
     });
 });
