@@ -76,7 +76,7 @@ export function stopCheck() {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The engine of the game report (or the first one); the list loads asynchronously. */
-async function pickEngine(): Promise<LocalEngine | null> {
+export async function pickEngine(): Promise<LocalEngine | null> {
     const store = getDefaultStore();
     // The engine list is read from its file only while someone is subscribed to it.
     const unsubscribe = store.sub(enginesAtom, () => {});

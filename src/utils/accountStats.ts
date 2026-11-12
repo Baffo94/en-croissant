@@ -3,6 +3,14 @@
 // Pure functions: the download and the page live in src/components/stats.
 
 import { parseComment, parsePgn } from "chessops/pgn";
+import {
+    type EngineStats,
+    engineStats,
+    type GameEval,
+    PHASES,
+    seriousRate,
+    winChance,
+} from "./gameReview";
 
 export type Ending =
     | "mate"
@@ -477,9 +485,15 @@ export type PeriodStats = {
     ratings: RatingPoint[];
     openings: OpeningRow[];
     habits: Habits;
+    /** What the engine says (only the analysed games count); null without analyses. */
+    engine: EngineStats | null;
 };
 
-function periodStats(games: StatsGame[], info: Map<string, SessionInfo>): PeriodStats {
+function periodStats(
+    games: StatsGame[],
+    info: Map<string, SessionInfo>,
+    evals?: Record<string, GameEval>,
+): PeriodStats {
     const rated = games.filter((g) => g.rating != null);
     const opp = games.filter((g) => g.oppRating != null);
     return {
@@ -495,6 +509,7 @@ function periodStats(games: StatsGame[], info: Map<string, SessionInfo>): Period
         ratings: rated.map((g) => ({ date: g.end, rating: g.rating as number })),
         openings: openingRows(games),
         habits: habits(games, info),
+        engine: evals ? engineStats(games, evals, (g) => openingFamily(g.opening)) : null,
     };
 }
 
@@ -504,11 +519,16 @@ export type StatsReport = {
     insights: Insight[];
 };
 
-export function statsReport(all: StatsGame[], filter: StatsFilter, now: number): StatsReport {
+export function statsReport(
+    all: StatsGame[],
+    filter: StatsFilter,
+    now: number,
+    evals?: Record<string, GameEval>,
+): StatsReport {
     const info = sessions(all);
     const { current, previous } = periods(now, filter.days);
-    const cur = periodStats(selectGames(all, filter, current), info);
-    const prev = periodStats(selectGames(all, filter, previous), info);
+    const cur = periodStats(selectGames(all, filter, current), info, evals);
+    const prev = periodStats(selectGames(all, filter, previous), info, evals);
     return { current: cur, previous: prev, insights: insights(cur, prev) };
 }
 
@@ -649,7 +669,126 @@ export function insights(cur: PeriodStats, prev: PeriodStats): Insight[] {
             });
     }
 
+    if (cur.engine) out.push(...engineInsights(cur.engine, prev.engine));
+
     return out.sort((a, b) => b.weight - a.weight);
+}
+
+/** Minimum analysed games for the engine's findings. */
+export const MIN_ANALYSED = 10;
+
+function engineInsights(e: EngineStats, p: EngineStats | null): Insight[] {
+    const out: Insight[] = [];
+    if (e.analysed < MIN_ANALYSED) return out;
+
+    // Winning positions not converted / lost positions saved.
+    const c = e.conversion;
+    if (c.n >= 8) {
+        const share = c.wins / c.n;
+        if (share < 0.75 || share >= 0.92) {
+            const bad = share < 0.75;
+            out.push({
+                key: bad ? "ConversionBad" : "ConversionGood",
+                tone: bad ? "bad" : "good",
+                params: { n: c.n, share: pct(share), draws: c.draws, losses: c.losses },
+                weight: Math.abs(share - 0.85) * Math.sqrt(c.n) * 1.5,
+            });
+        }
+    }
+    const b = e.comebacks;
+    if (b.n >= 8) {
+        const saved = (b.wins + b.draws / 2) / b.n;
+        if (saved >= 0.3 || saved <= 0.08)
+            out.push({
+                key: saved >= 0.3 ? "ComebacksGood" : "ComebacksBad",
+                tone: saved >= 0.3 ? "good" : "info",
+                params: { n: b.n, wins: b.wins, draws: b.draws },
+                weight: Math.abs(saved - 0.15) * Math.sqrt(b.n),
+            });
+    }
+
+    // Endgames: points against the evaluation when they started.
+    const eg = e.endgames;
+    if (eg.n >= MIN_GAMES) {
+        const diff = (eg.score - eg.expected) / eg.n;
+        if (Math.abs(diff) >= MIN_DIFF)
+            out.push({
+                key: diff < 0 ? "EndgamesBad" : "EndgamesGood",
+                tone: diff < 0 ? "bad" : "good",
+                params: { n: eg.n, diff: Math.abs(pct(diff)) },
+                weight: weightOf(diff, eg.n),
+            });
+    }
+
+    // Serious errors in time trouble.
+    const tt = e.timeTrouble;
+    if (tt.seriousWithClock >= 8 && tt.movesWithClock > 0) {
+        const share = tt.seriousInTrouble / tt.seriousWithClock;
+        const movesShare = tt.movesInTrouble / tt.movesWithClock;
+        if (share >= 0.25 && share >= movesShare * 2)
+            out.push({
+                key: "TimeTroubleErrors",
+                tone: "bad",
+                params: { share: pct(share), moves: pct(movesShare), n: tt.seriousInTrouble },
+                weight: share * Math.sqrt(tt.seriousWithClock),
+            });
+    }
+
+    // The phase where serious errors are most frequent.
+    const rates = PHASES.map((ph) => ({
+        ph,
+        rate: seriousRate(e.phases[ph]),
+        moves: e.phases[ph].moves,
+    }));
+    const valid = rates.filter((r) => r.rate !== null && r.moves >= 100);
+    if (valid.length >= 2) {
+        const worst = valid.reduce((a, r) => ((r.rate as number) > (a.rate as number) ? r : a));
+        const others = valid.filter((r) => r !== worst);
+        const otherMoves = others.reduce((s, r) => s + r.moves, 0);
+        const otherRate =
+            (others.reduce((s, r) => s + ((r.rate as number) * r.moves) / 100, 0) / otherMoves) *
+            100;
+        if ((worst.rate as number) >= otherRate * 1.5 && (worst.rate as number) - otherRate >= 1)
+            out.push({
+                key: "PhaseErrors",
+                tone: "bad",
+                params: {
+                    phase: worst.ph,
+                    rate: Math.round((worst.rate as number) * 10) / 10,
+                    other: Math.round(otherRate * 10) / 10,
+                },
+                weight: ((worst.rate as number) - otherRate) / 2,
+            });
+    }
+
+    // Openings you leave clearly worse (or better), after move 15.
+    for (const [key, v] of e.eval15ByOpening) {
+        const [color, opening] = [key.slice(0, key.indexOf("|")), key.slice(key.indexOf("|") + 1)];
+        if (opening === UNKNOWN_OPENING || v.n < 8 || Math.abs(v.avg) < 60) continue;
+        out.push({
+            key: v.avg < 0 ? "Eval15Bad" : "Eval15Good",
+            tone: v.avg < 0 ? "bad" : "good",
+            params: { color, opening, n: v.n, eval: Math.round(v.avg) },
+            // Same scale as the results: the expected score that evaluation is worth.
+            weight: Math.abs(winChance(v.avg) / 100 - 0.5) * Math.sqrt(v.n),
+        });
+    }
+
+    // Accuracy against the previous period.
+    if (p && p.analysed >= 20 && e.analysed >= 20 && e.accuracy !== null && p.accuracy !== null) {
+        const diff = e.accuracy - p.accuracy;
+        if (Math.abs(diff) >= 2.5)
+            out.push({
+                key: diff < 0 ? "AccuracyBad" : "AccuracyGood",
+                tone: diff < 0 ? "bad" : "good",
+                params: {
+                    accuracy: Math.round(e.accuracy * 10) / 10,
+                    previous: Math.round(p.accuracy * 10) / 10,
+                },
+                weight: (Math.abs(diff) / 100) * Math.sqrt(e.analysed) * 3,
+            });
+    }
+    return out;
 }
 
 export function mergeScores(scores: Score[]): Score {

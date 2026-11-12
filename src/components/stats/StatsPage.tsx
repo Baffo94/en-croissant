@@ -25,18 +25,20 @@ import {
   IconAlertTriangle,
   IconChartBar,
   IconChevronDown,
+  IconChess,
   IconChevronRight,
   IconCloudDownload,
   IconInfoCircle,
   IconMoodSmile,
   IconRepeat,
   IconSwords,
+  IconTarget,
   IconTrendingUp,
 } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { notifications } from "@mantine/notifications";
 import { getDefaultStore, useAtom, useAtomValue } from "jotai";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ENDINGS,
@@ -53,6 +55,15 @@ import {
   UNKNOWN_OPENING,
 } from "@/utils/accountStats";
 import { linkedAccounts } from "../repertoires/gamesStore";
+import { loadStatsEvals, statsEvalsAtom } from "./analysisRunner";
+import {
+  AnalysisCard,
+  Endgames,
+  EngineErrors,
+  EvalBadge,
+  NeedsAnalysis,
+  pawns,
+} from "./StatsEngine";
 import {
   downloadStatsGames,
   loadStatsGames,
@@ -109,16 +120,26 @@ function Diff({ s, min = MIN_GAMES }: { s: Score | undefined; min?: number }) {
   );
 }
 
-type Row = { key: string; label: string; cur: Score; prev?: Score; indent?: boolean };
+type Row = {
+  key: string;
+  label: string;
+  cur: Score;
+  prev?: Score;
+  indent?: boolean;
+  /** Content of the optional extra column. */
+  extra?: ReactNode;
+};
 
 function ScoreTable({
   rows,
   firstColumn,
   expandable,
+  extraColumn,
 }: {
   rows: Row[];
   firstColumn: string;
   expandable?: Record<string, Row[]>;
+  extraColumn?: { title: string; help: string };
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -145,6 +166,7 @@ function ScoreTable({
       <Table.Td>
         <Diff s={r.cur} />
       </Table.Td>
+      {extraColumn && <Table.Td>{r.extra ?? <Text c="dimmed">—</Text>}</Table.Td>}
       <Table.Td>
         {r.prev?.n ? (
           <Group gap={6} wrap="nowrap">
@@ -177,6 +199,16 @@ function ScoreTable({
                 </Group>
               </Tooltip>
             </Table.Th>
+            {extraColumn && (
+              <Table.Th>
+                <Tooltip label={extraColumn.help} multiline w={280}>
+                  <Group gap={4} wrap="nowrap">
+                    {extraColumn.title}
+                    <IconInfoCircle size="0.9rem" />
+                  </Group>
+                </Tooltip>
+              </Table.Th>
+            )}
             <Table.Th>{t("Statistics.Col.Previous")}</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -250,6 +282,11 @@ function Insights({ insights }: { insights: Insight[] }) {
                       : "",
                   late: typeof i.params.late === "number" ? signed(i.params.late / 100) : "",
                   early: typeof i.params.early === "number" ? signed(i.params.early / 100) : "",
+                  phase:
+                    typeof i.params.phase === "string"
+                      ? t(`Statistics.PhaseIn.${i.params.phase}`)
+                      : "",
+                  eval: typeof i.params.eval === "number" ? pawns(i.params.eval) : "",
                 })}
               </Text>
             </Group>
@@ -401,7 +438,14 @@ function Openings({ cur, prev }: { cur: PeriodStats; prev: PeriodStats }) {
       prev: prevVariations.get(v.name),
       indent: true,
     }));
-    return { key, label: name(r.family), cur: r.score, prev: before?.score };
+    const e15 = cur.engine?.eval15ByOpening.get(key);
+    return {
+      key,
+      label: name(r.family),
+      cur: r.score,
+      prev: before?.score,
+      extra: e15 ? <EvalBadge cp={e15.avg} n={e15.n} /> : undefined,
+    };
   };
   const tableRows = rows.map(toRow);
   return (
@@ -424,6 +468,11 @@ function Openings({ cur, prev }: { cur: PeriodStats; prev: PeriodStats }) {
           rows={tableRows}
           firstColumn={t("Statistics.Col.Opening")}
           expandable={expandable}
+          extraColumn={
+            cur.engine?.analysed
+              ? { title: t("Statistics.Col.Eval15"), help: t("Statistics.Eval15Help") }
+              : undefined
+          }
         />
       )}
     </Stack>
@@ -542,11 +591,13 @@ export default function StatsPage() {
   const [settings, setSettings] = useAtom(statsSettingsAtom);
   const data = useAtomValue(statsGamesAtom);
   const download = useAtomValue(statsDownloadAtom);
+  const evals = useAtomValue(statsEvalsAtom);
   const [tab, setTab] = useState<string | null>("openings");
   const accounts = useMemo(() => linkedAccounts(), []);
 
   useEffect(() => {
     loadStatsGames();
+    loadStatsEvals();
   }, []);
 
   // Default account: the first Chess.com one (that is where the serious games are).
@@ -563,9 +614,10 @@ export default function StatsPage() {
             entry.games,
             { speed: settings.speed, ratedOnly: settings.ratedOnly, days: settings.days },
             entry.to,
+            evals ?? undefined,
           )
         : null,
-    [entry, settings.speed, settings.ratedOnly, settings.days],
+    [entry, settings.speed, settings.ratedOnly, settings.days, evals],
   );
   const speedsWithGames = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -735,6 +787,11 @@ export default function StatsPage() {
                       </Card>
                     ) : (
                       <>
+                        <AnalysisCard
+                          games={[...report.current.games, ...report.previous.games].sort(
+                            (a, b) => b.end - a.end,
+                          )}
+                        />
                         <Insights insights={report.insights} />
                         <Summary cur={report.current} prev={report.previous} />
                         <RatingChart cur={report.current} />
@@ -743,12 +800,35 @@ export default function StatsPage() {
                             <Tabs.Tab value="openings" leftSection={<IconSwords size="1rem" />}>
                               {t("Statistics.Tab.Openings")}
                             </Tabs.Tab>
+                            <Tabs.Tab value="errors" leftSection={<IconTarget size="1rem" />}>
+                              {t("Statistics.Tab.Errors")}
+                            </Tabs.Tab>
+                            <Tabs.Tab value="endgames" leftSection={<IconChess size="1rem" />}>
+                              {t("Statistics.Tab.Endgames")}
+                            </Tabs.Tab>
                             <Tabs.Tab value="habits" leftSection={<IconRepeat size="1rem" />}>
                               {t("Statistics.Tab.Habits")}
                             </Tabs.Tab>
                           </Tabs.List>
                           <Tabs.Panel value="openings" pt="md">
                             <Openings cur={report.current} prev={report.previous} />
+                          </Tabs.Panel>
+                          <Tabs.Panel value="errors" pt="md">
+                            {report.current.engine?.analysed ? (
+                              <EngineErrors
+                                cur={report.current.engine}
+                                prev={report.previous.engine}
+                              />
+                            ) : (
+                              <NeedsAnalysis />
+                            )}
+                          </Tabs.Panel>
+                          <Tabs.Panel value="endgames" pt="md">
+                            {report.current.engine?.analysed ? (
+                              <Endgames cur={report.current.engine} prev={report.previous.engine} />
+                            ) : (
+                              <NeedsAnalysis />
+                            )}
                           </Tabs.Panel>
                           <Tabs.Panel value="habits" pt="md">
                             <Habits cur={report.current} prev={report.previous} />

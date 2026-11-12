@@ -7,14 +7,19 @@
 
 use std::{
     path::PathBuf,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
+        Mutex, OnceLock,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use log::warn;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use shakmaty::{fen::Fen, san::SanPlus, uci::UciMove, CastlingMode, Chess, EnPassantMode, Position};
+use shakmaty::{
+    fen::Fen, san::SanPlus, uci::UciMove, CastlingMode, Chess, EnPassantMode, Position,
+};
 use specta::Type;
 use tauri::Manager;
 
@@ -195,9 +200,28 @@ pub enum Cloud {
     Unavailable,
 }
 
+/// Until when (seconds since the epoch) Lichess is left alone after refusing or failing,
+/// for every analysis: a batch of many games would otherwise ask again at each game.
+static CLOUD_PAUSED_UNTIL: AtomicU64 = AtomicU64::new(0);
+const CLOUD_PAUSE_SECS: u64 = 60;
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn pause_cloud() {
+    CLOUD_PAUSED_UNTIL.store(now_secs() + CLOUD_PAUSE_SECS, AtomicOrdering::SeqCst);
+}
+
 /// Asks the Lichess cloud for the evaluation of a position (opening positions are
 /// often there, analysed very deeply). Scores are from White's point of view.
 pub async fn lichess_cloud(pos: &Chess, multipv: usize) -> Cloud {
+    if now_secs() < CLOUD_PAUSED_UNTIL.load(AtomicOrdering::SeqCst) {
+        return Cloud::Unavailable;
+    }
     let fen = Fen::from_position(pos, EnPassantMode::Legal).to_string();
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(6))
@@ -209,13 +233,17 @@ pub async fn lichess_cloud(pos: &Chess, multipv: usize) -> Cloud {
     };
     let response = client
         .get("https://lichess.org/api/cloud-eval")
-        .query(&[("fen", fen.as_str()), ("multiPv", &multipv.max(1).to_string())])
+        .query(&[
+            ("fen", fen.as_str()),
+            ("multiPv", &multipv.max(1).to_string()),
+        ])
         .send()
         .await;
     let response = match response {
         Ok(r) => r,
         Err(e) => {
             warn!("Lichess cloud eval unavailable: {}", e);
+            pause_cloud();
             return Cloud::Unavailable;
         }
     };
@@ -224,6 +252,7 @@ pub async fn lichess_cloud(pos: &Chess, multipv: usize) -> Cloud {
     }
     if !response.status().is_success() {
         warn!("Lichess cloud eval: HTTP {}", response.status());
+        pause_cloud();
         return Cloud::Unavailable;
     }
     let Ok(eval) = response.json::<CloudEval>().await else {
@@ -243,7 +272,9 @@ fn from_cloud(pos: &Chess, eval: CloudEval) -> Option<CachedEval> {
         let mut uci_moves = Vec::new();
         let mut san_moves = Vec::new();
         for token in pv.moves.split_whitespace() {
-            let Ok(uci) = token.parse::<UciMove>() else { break };
+            let Ok(uci) = token.parse::<UciMove>() else {
+                break;
+            };
             let Ok(m) = uci.to_move(&p) else { break };
             san_moves.push(SanPlus::from_move_and_play_unchecked(&mut p, m).to_string());
             uci_moves.push(uci.to_string());
@@ -277,7 +308,9 @@ pub async fn eval_cache_stats(app: tauri::AppHandle) -> Result<EvalCacheStats, E
     let positions = with_db(&app, |db| {
         db.query_row("SELECT COUNT(*) FROM evals", [], |row| row.get::<_, i64>(0))
     })?;
-    let bytes = std::fs::metadata(db_path(&app)?).map(|m| m.len()).unwrap_or(0);
+    let bytes = std::fs::metadata(db_path(&app)?)
+        .map(|m| m.len())
+        .unwrap_or(0);
     Ok(EvalCacheStats {
         positions: positions as u32,
         bytes: bytes.min(u32::MAX as u64) as u32,
@@ -293,7 +326,10 @@ pub async fn eval_cache_clear(app: tauri::AppHandle) -> Result<(), Error> {
 /// Stored evaluation of a position (any FEN; only opening positions are kept).
 #[tauri::command]
 #[specta::specta]
-pub async fn eval_cache_get(app: tauri::AppHandle, fen: String) -> Result<Option<CachedEval>, Error> {
+pub async fn eval_cache_get(
+    app: tauri::AppHandle,
+    fen: String,
+) -> Result<Option<CachedEval>, Error> {
     match key_of_fen(&fen) {
         Some(key) => get(&app, &key),
         None => Ok(None),
@@ -303,7 +339,11 @@ pub async fn eval_cache_get(app: tauri::AppHandle, fen: String) -> Result<Option
 /// Stores the evaluation of an opening position (kept only if deeper than the stored one).
 #[tauri::command]
 #[specta::specta]
-pub async fn eval_cache_put(app: tauri::AppHandle, fen: String, eval: CachedEval) -> Result<(), Error> {
+pub async fn eval_cache_put(
+    app: tauri::AppHandle,
+    fen: String,
+    eval: CachedEval,
+) -> Result<(), Error> {
     let Ok(fen) = fen.parse::<Fen>() else {
         return Ok(());
     };
@@ -336,13 +376,20 @@ mod tests {
         let c = pos("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
         let d = pos("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
         assert_eq!(position_key(&c), position_key(&d));
-        assert_eq!(position_key(&d), "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -");
+        assert_eq!(
+            position_key(&d),
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -"
+        );
     }
 
     #[test]
     fn opening_is_up_to_move_twenty() {
-        assert!(is_opening(&pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 20")));
-        assert!(!is_opening(&pos("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 21")));
+        assert!(is_opening(&pos(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 20"
+        )));
+        assert!(!is_opening(&pos(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 21"
+        )));
     }
 
     #[test]

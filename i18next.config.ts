@@ -49,6 +49,8 @@ export default defineConfig({
             "Statistics.Endings.*",
             "Statistics.Ending.*",
             "Statistics.Session.*",
+            "Statistics.Phase.*",
+            "Statistics.PhaseIn.*",
         ],
         sort: true,
     },
