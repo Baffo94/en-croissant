@@ -6,6 +6,8 @@ import { makeSan, parseSan } from "chessops/san";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { positionFromFen } from "@/utils/chessops";
 import { useBackHandler } from "../back";
+import { useAppState } from "../state";
+import { cloudEval } from "../cloudEval";
 import { type Analysis as EngineAnalysis, Engine, formatScore, pvToSan, whiteBar } from "../engine";
 import { Board } from "./Board";
 import { ExplorerPanel } from "./ExplorerPanel";
@@ -65,7 +67,11 @@ export function Analysis({
   // Off by default: started (and loaded) only on request.
   const [engineOn, setEngineOn] = useState(false);
   const [tab, setTab] = useState<"engine" | "explorer">("engine");
-  const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<(EngineAnalysis & { source?: "lichess" }) | null>(null);
+  // Position for which the user asked the phone's engine even though Lichess has it.
+  const [forced, setForced] = useState<string | null>(null);
+  const [askingCloud, setAskingCloud] = useState(false);
+  const token = useAppState((s) => s.explorer.token);
   const engine = useRef<Engine | null>(null);
   const movesRef = useRef<HTMLDivElement>(null);
 
@@ -79,11 +85,35 @@ export function Analysis({
       engine.current?.stop();
       return;
     }
-    if (!engine.current) engine.current = new Engine();
     const [pos] = positionFromFen(fen);
-    if (!pos || pos.isEnd()) return;
-    engine.current?.analyse(fen, setAnalysis, { multiPv: 3, depth: ENGINE_DEPTH });
-  }, [fen, engineOn]);
+    if (!pos || pos.isEnd()) {
+      engine.current?.stop();
+      return;
+    }
+    const runEngine = () => {
+      if (!engine.current) engine.current = new Engine();
+      engine.current.analyse(fen, setAnalysis, { multiPv: 3, depth: ENGINE_DEPTH });
+    };
+    if (forced === fen) {
+      runEngine();
+      return;
+    }
+    // Lichess first: if it already has the position (usually much deeper), the
+    // phone's engine does not start at all.
+    engine.current?.stop();
+    let cancelled = false;
+    setAskingCloud(true);
+    cloudEval(fen, token).then((cloud) => {
+      if (cancelled) return;
+      setAskingCloud(false);
+      if (cloud) setAnalysis(cloud);
+      else runEngine();
+    });
+    return () => {
+      cancelled = true;
+      setAskingCloud(false);
+    };
+  }, [fen, engineOn, forced, token]);
 
   useEffect(() => {
     movesRef.current
@@ -173,7 +203,11 @@ export function Analysis({
             <strong>{status ?? (best ? formatScore(best.score) : "…")}</strong>
             {!status && (
               <span>
-                {analysis && analysis.fen === fen ? `profondità ${analysis.depth}` : "calcolo…"}
+                {analysis && analysis.fen === fen
+                  ? `${analysis.source === "lichess" ? "Lichess · " : ""}profondità ${analysis.depth}`
+                  : askingCloud
+                    ? "cerco su Lichess…"
+                    : "calcolo…"}
               </span>
             )}
           </div>
@@ -321,10 +355,25 @@ export function Analysis({
               </button>
             );
           })}
-          {lines.length === 0 && !status && <p className="dim">Stockfish sta calcolando…</p>}
+          {lines.length === 0 && !status && (
+            <p className="dim">
+              {askingCloud ? "Cerco la valutazione su Lichess…" : "Stockfish sta calcolando…"}
+            </p>
+          )}
+          {analysis?.source === "lichess" && analysis.fen === fen && (
+            <button type="button" className="link-button" onClick={() => setForced(fen)}>
+              Calcola col motore del telefono
+            </button>
+          )}
         </div>
       )}
-      {tab === "engine" && <p className="engine-credit">Stockfish 19 lite</p>}
+      {tab === "engine" && (
+        <p className="engine-credit">
+          {engineOn && analysis?.source === "lichess" && analysis.fen === fen
+            ? "Valutazione cloud di Lichess"
+            : "Stockfish 19 lite"}
+        </p>
+      )}
     </div>
   );
 }

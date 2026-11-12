@@ -912,3 +912,14 @@ button.pause-toggle {
   color: var(--dim);
   font-style: italic;
 }
+
+.link-button {
+  display: block;
+  margin: 8px auto 0;
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 8px;
+  color: var(--dim);
+  font-size: 13px;
+}
