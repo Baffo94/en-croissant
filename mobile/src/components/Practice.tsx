@@ -22,6 +22,7 @@ import { setComment } from "../comments";
 import { setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
+import { Ideas } from "./Ideas";
 import { Board } from "./Board";
 import { CommentItem, type NoteItem } from "./CommentItem";
 
@@ -141,6 +142,7 @@ export function Practice({
   /** Ply shown while browsing the moves that led to the position (null = live). */
   const [viewPly, setViewPly] = useState<number | null>(null);
   const [, setCommentVersion] = useState(0);
+  const [showIdeas, setShowIdeas] = useState(false);
   const [analysis, setAnalysis] = useState<{
     moves: string[];
     comments: string[];
@@ -336,6 +338,17 @@ export function Practice({
     );
   }
 
+  if (showIdeas) {
+    return (
+      <Ideas
+        rel={currentSource.source.rel}
+        game={currentSource.source.game}
+        title={currentSource.source.name}
+        onBack={() => setShowIdeas(false)}
+      />
+    );
+  }
+
   function openAnalysis() {
     const sans = nodes.slice(1).map((n) => n.san ?? "");
     const comments = nodes.slice(1).map((n) => n.comment ?? "");
@@ -392,18 +405,28 @@ export function Practice({
         title={title}
         onBack={onBack}
         right={
-          !mixed && singleRel ? (
+          <>
             <button
               type="button"
-              className="pause-toggle"
-              onClick={() => {
-                setRepertoirePaused(singleRel, !paused);
-                scheduleSync(PAUSE_SYNC_DELAY);
-              }}
+              className="icon"
+              aria-label="Idee della variante"
+              onClick={() => setShowIdeas(true)}
             >
-              {paused ? "▶ Riattiva" : "⏸ Pausa"}
+              💡
             </button>
-          ) : undefined
+            {!mixed && singleRel && (
+              <button
+                type="button"
+                className="pause-toggle"
+                onClick={() => {
+                  setRepertoirePaused(singleRel, !paused);
+                  scheduleSync(PAUSE_SYNC_DELAY);
+                }}
+              >
+                {paused ? "▶ Riattiva" : "⏸ Pausa"}
+              </button>
+            )}
+          </>
         }
       />
       {!mixed && paused && (

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { type GroupEntry, homeItems, listRepertoires, type RepertoireEntry } from "../repertoires";
 import { setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow, useSyncStatus } from "../sync";
+import { ideaPoints } from "@/utils/ideas";
+import { getGameComment } from "../comments";
 import { Header } from "./Practice";
 
 const PAUSE_SYNC_DELAY = 3_000;
@@ -44,17 +46,26 @@ function useExpandedGroups(): [Set<string>, (folder: string) => void] {
   return [expanded, toggle];
 }
 
+type IdeasProps = {
+  /** Number of ideas of an entry (its PGN comment before the first move). */
+  ideasOf: (entry: RepertoireEntry) => number;
+  onIdeas: (entry: RepertoireEntry) => void;
+};
+
 function EntryItem({
   entry,
   onOpen,
   section = false,
+  ideasOf,
+  onIdeas,
 }: {
   entry: RepertoireEntry;
   onOpen: (entry: RepertoireEntry) => void;
   section?: boolean;
-}) {
+} & IdeasProps) {
+  const ideas = ideasOf(entry);
   return (
-    <li>
+    <li className="entry-row">
       <button
         type="button"
         className={`item${section ? " section" : ""}${entry.paused ? " is-paused" : ""}`}
@@ -77,6 +88,14 @@ function EntryItem({
           <span className="item-total">{entry.stats.total}</span>
         </span>
       </button>
+      <button
+        type="button"
+        className={`ideas-btn${ideas ? " has" : ""}`}
+        aria-label={ideas ? `Idee della variante (${ideas})` : "Aggiungi le idee della variante"}
+        onClick={() => onIdeas(entry)}
+      >
+        💡
+      </button>
     </li>
   );
 }
@@ -87,13 +106,15 @@ function GroupItem({
   onToggle,
   onOpen,
   onTrain,
+  ideasOf,
+  onIdeas,
 }: {
   group: GroupEntry;
   expanded: boolean;
   onToggle: () => void;
   onOpen: (entry: RepertoireEntry) => void;
   onTrain: (group: GroupEntry) => void;
-}) {
+} & IdeasProps) {
   const toDo = group.stats.due + group.stats.unseen;
   return (
     <li className={`group${expanded ? " open" : ""}`}>
@@ -123,7 +144,14 @@ function GroupItem({
         <div className="group-body">
           <ul className="list sections">
             {group.sections.map((e) => (
-              <EntryItem key={`${e.rel}#${e.game}`} entry={e} onOpen={onOpen} section />
+              <EntryItem
+                key={`${e.rel}#${e.game}`}
+                entry={e}
+                onOpen={onOpen}
+                section
+                ideasOf={ideasOf}
+                onIdeas={onIdeas}
+              />
             ))}
           </ul>
           <div className="group-actions">
@@ -156,11 +184,13 @@ export function Home({
   onTrainAll,
   onTrainGroup,
   onSettings,
+  onIdeas,
 }: {
   onOpen: (entry: RepertoireEntry) => void;
   onTrainAll: (entries: RepertoireEntry[]) => void;
   onTrainGroup: (name: string, entries: RepertoireEntry[]) => void;
   onSettings: () => void;
+  onIdeas: (entry: RepertoireEntry) => void;
 }) {
   const files = useAppState((s) => s.files);
   const decks = useAppState((s) => s.decks);
@@ -179,6 +209,14 @@ export function Home({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [files, decks, pauses, tick],
   );
+  const ideasCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of all)
+      counts.set(`${e.rel}#${e.game}`, ideaPoints(getGameComment(e.rel, e.game)).length);
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, all]);
+  const ideasOf = (e: RepertoireEntry) => ideasCount.get(`${e.rel}#${e.game}`) ?? 0;
   const entries = all.filter((e) => !e.paused);
   const items = homeItems(all);
   const isPaused = (i: (typeof items)[number]) =>
@@ -198,7 +236,13 @@ export function Home({
 
   const renderItem = (item: (typeof items)[number]) =>
     item.kind === "entry" ? (
-      <EntryItem key={`${item.entry.rel}#${item.entry.game}`} entry={item.entry} onOpen={onOpen} />
+      <EntryItem
+        key={`${item.entry.rel}#${item.entry.game}`}
+        entry={item.entry}
+        onOpen={onOpen}
+        ideasOf={ideasOf}
+        onIdeas={onIdeas}
+      />
     ) : (
       <GroupItem
         key={`group:${item.group.folder}`}
@@ -207,6 +251,8 @@ export function Home({
         onToggle={() => toggle(item.group.folder)}
         onOpen={onOpen}
         onTrain={(g) => onTrainGroup(g.name, g.active)}
+        ideasOf={ideasOf}
+        onIdeas={onIdeas}
       />
     );
 

@@ -2,6 +2,7 @@ import { App as CapApp } from "@capacitor/app";
 import { useEffect, useRef, useState } from "react";
 import { handleBack } from "./back";
 import { Home } from "./components/Home";
+import { Ideas } from "./components/Ideas";
 import { Practice, type PracticeSource } from "./components/Practice";
 import { practiceName } from "./repertoires";
 import { Settings } from "./components/Settings";
@@ -11,7 +12,8 @@ import { isConfigured, syncNow } from "./sync";
 type Screen =
   | { kind: "home" }
   | { kind: "settings" }
-  | { kind: "practice"; sources: PracticeSource[]; title: string; mixed: boolean };
+  | { kind: "practice"; sources: PracticeSource[]; title: string; mixed: boolean }
+  | { kind: "ideas"; rel: string; game: number; title: string };
 
 export function App() {
   const configured = useAppState((s) => isConfigured(s.config));
@@ -54,6 +56,16 @@ export function App() {
       />
     );
   }
+  if (screen.kind === "ideas") {
+    return (
+      <Ideas
+        rel={screen.rel}
+        game={screen.game}
+        title={screen.title}
+        onBack={() => setScreen({ kind: "home" })}
+      />
+    );
+  }
   if (screen.kind === "practice") {
     return (
       <Practice
@@ -92,6 +104,9 @@ export function App() {
         })
       }
       onSettings={() => setScreen({ kind: "settings" })}
+      onIdeas={(entry) =>
+        setScreen({ kind: "ideas", rel: entry.rel, game: entry.game, title: practiceName(entry) })
+      }
     />
   );
 }

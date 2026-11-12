@@ -25,6 +25,7 @@ import {
   IconArrowsSplit,
   IconChess,
   IconBook,
+  IconBulb,
   IconChevronDown,
   IconChevronUp,
   IconCloud,
@@ -71,6 +72,8 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
+import { ideaPoints } from "@/utils/ideas";
+import { getMoveComment } from "@/utils/pgnEdit";
 import {
   decksOfFile,
   isRepertoirePaused,
@@ -92,6 +95,7 @@ import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 import { CheckPanel, useOpenIssues } from "./CheckPanel";
 import { GamesPanel } from "./GamesPanel";
+import { IdeasModal } from "./IdeasModal";
 import { type CheckFile, checkRunAtom, startCheck } from "./checkRunner";
 import {
   type GroupChoice,
@@ -124,7 +128,7 @@ type RepertoireFile = FileMetadata & {
   group: string;
 };
 
-type Info = { orientation: "white" | "black"; positions: number };
+type Info = { orientation: "white" | "black"; positions: number; ideas: number };
 
 type FileState = { stats: CardStats; paused: boolean; toDo: number };
 
@@ -168,9 +172,13 @@ async function readInfos(files: RepertoireFile[]): Promise<Record<string, Info>>
       const tree = await parsePGN(pgn);
       const orientation = tree.headers.orientation === "black" ? "black" : "white";
       const positions = buildFromTree(tree.root, orientation, tree.headers.start ?? []);
-      result[file.path] = { orientation, positions: positions.length };
+      result[file.path] = {
+        orientation,
+        positions: positions.length,
+        ideas: ideaPoints(getMoveComment(pgn, 0, [])).length,
+      };
     } catch {
-      result[file.path] = { orientation: "white", positions: 0 };
+      result[file.path] = { orientation: "white", positions: 0, ideas: 0 };
     }
   }
   return result;
@@ -341,7 +349,34 @@ type FileActions = {
   onSplit: (file: RepertoireFile) => void;
   onDelete: (file: RepertoireFile) => void;
   onCheck: (file: RepertoireFile) => void;
+  onIdeas: (file: RepertoireFile) => void;
 };
+
+/** Button of a section's ideas: lit when the section has some. */
+function IdeasButton({
+  file,
+  count,
+  actions,
+}: {
+  file: RepertoireFile;
+  count: number;
+  actions: FileActions;
+}) {
+  const { t } = useTranslation();
+  const label = count ? t("Repertoires.Ideas.Show", { count }) : t("Repertoires.Ideas.Add");
+  return (
+    <Tooltip label={label}>
+      <ActionIcon
+        variant={count ? "light" : "subtle"}
+        color={count ? "yellow" : "gray"}
+        aria-label={label}
+        onClick={() => actions.onIdeas(file)}
+      >
+        <IconBulb size="1rem" />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
 
 function showInFolder(path: string) {
   openPath(path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))));
@@ -458,6 +493,7 @@ function RepertoireCard({
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
             </Tooltip>
           )}
+          <IdeasButton file={file} count={info?.ideas ?? 0} actions={actions} />
           <FileMenu file={file} paused={paused} actions={actions} />
         </Group>
       </Group>
@@ -527,10 +563,12 @@ function useExpanded(key: string): [boolean, () => void] {
 function SectionRow({
   file,
   state,
+  ideas,
   actions,
 }: {
   file: RepertoireFile;
   state: FileState;
+  ideas: number;
   actions: FileActions;
 }) {
   const { t } = useTranslation();
@@ -559,6 +597,7 @@ function SectionRow({
         <StatusBadges {...state} size="xs" />
       </Stack>
       <Group gap={2} wrap="nowrap">
+        <IdeasButton file={file} count={ideas} actions={actions} />
         <Tooltip
           label={
             state.toDo > 0
@@ -738,6 +777,7 @@ function GroupCard({
               key={file.path}
               file={file}
               state={states[file.path] ?? fileState(file, infos?.[file.path])}
+              ideas={infos?.[file.path]?.ideas ?? 0}
               actions={fileActions}
             />
           ))}
@@ -772,6 +812,7 @@ export default function RepertoiresPage() {
   const [deleting, setDeleting] = useState<RepertoireFile | null>(null);
   const [moving, setMoving] = useState<RepertoireFile | null>(null);
   const [splitting, setSplitting] = useState<RepertoireFile | null>(null);
+  const [ideasFor, setIdeasFor] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
   const [view, setView] = useState<"list" | "check" | "games">("list");
@@ -796,8 +837,16 @@ export default function RepertoiresPage() {
     listRepertoires(documentDir, syncFolder ?? null),
   );
 
+  // Bumped when ideas are saved here (the file's date may not change within a second).
+  const [infosVersion, setInfosVersion] = useState(0);
   const { data: infos } = useSWR(
-    files ? ["repertoire-infos", files.map((f) => `${f.path}:${f.lastModified}`).join("|")] : null,
+    files
+      ? [
+          "repertoire-infos",
+          files.map((f) => `${f.path}:${f.lastModified}`).join("|"),
+          infosVersion,
+        ]
+      : null,
     () => readInfos(files ?? []),
   );
 
@@ -1010,6 +1059,7 @@ export default function RepertoiresPage() {
       setView("check");
       startCheck(checkFiles, [file.path], practiceLabel(file));
     },
+    onIdeas: setIdeasFor,
   };
 
   const groupActions: GroupActions = {
@@ -1238,6 +1288,15 @@ export default function RepertoiresPage() {
         onClose={() => setMoving(null)}
         onDone={() => {
           setMoving(null);
+          mutate();
+        }}
+      />
+      <IdeasModal
+        file={ideasFor}
+        title={ideasFor ? practiceLabel(ideasFor) : ""}
+        onClose={() => setIdeasFor(null)}
+        onSaved={() => {
+          setInfosVersion((v) => v + 1);
           mutate();
         }}
       />

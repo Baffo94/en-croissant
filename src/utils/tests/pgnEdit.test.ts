@@ -89,3 +89,30 @@ describe("editing a move comment in the PGN text", () => {
         expect(setMoveComment(PGN, 0, ["e4", "c5"], "x")).toBeNull();
     });
 });
+
+describe("the game's own comment (ideas of a section)", () => {
+    test("adds, reads, changes and removes the comment before the first move", () => {
+        const ideas = "- Spingere d4 presto\n- Il cavallo va in d4";
+        const added = setMoveComment(PGN, 0, [], ideas)!;
+        expect(added).toContain(`[Result "*"]\n\n{${ideas}} 1. e4 e5`);
+        expectOnlyChanged(PGN, added, [], ideas);
+        expect(getMoveComment(added, 0, [])).toBe(ideas);
+        // The second game is untouched and has no comment of its own.
+        expect(getMoveComment(added, 1, [])).toBe("");
+        const changed = setMoveComment(added, 0, [], "- Altro")!;
+        expect(getMoveComment(changed, 0, [])).toBe("- Altro");
+        expect(setMoveComment(changed, 0, [], "")).toBe(PGN);
+    });
+
+    test("keeps directives already there and works on later games", () => {
+        const withEval = PGN.replace("1. d4 d5", "{[%eval +0.37] } 1. d4 d5");
+        const after = setMoveComment(withEval, 1, [], "- Gambetto di donna")!;
+        expect(after).toContain("{[%eval +0.37] - Gambetto di donna} 1. d4 d5");
+        expect(getMoveComment(after, 1, [])).toBe("- Gambetto di donna");
+        expect(getMoveComment(after, 0, [])).toBe("");
+        expect(parsePgnGames(after)[1].root.comment).toContain("- Gambetto di donna");
+        // Removing the text keeps the directive.
+        expect(setMoveComment(after, 1, [], "")).toContain("{[%eval +0.37]} 1. d4 d5");
+        expect(setMoveComment(PGN, 5, [], "x")).toBeNull();
+    });
+});

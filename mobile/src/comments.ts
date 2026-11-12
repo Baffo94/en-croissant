@@ -3,7 +3,7 @@
 // sync. Edits are remembered until GitHub has them, so that if the PC changed the same
 // file meanwhile they are applied again on top of the PC's version.
 
-import { setMoveComment } from "@/utils/pgnEdit";
+import { getMoveComment, setMoveComment } from "@/utils/pgnEdit";
 import { type CommentEdit, encodeBase64, decodeBase64, getState, updateState } from "./state";
 import { scheduleSync } from "./sync";
 
@@ -14,6 +14,12 @@ const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
 function readText(rel: string): string | null {
     const b64 = getState().files[rel];
     return b64 === undefined ? null : decoder.decode(decodeBase64(b64));
+}
+
+/** The game's own comment (the ideas of a section), "" when none. */
+export function getGameComment(rel: string, game: number): string {
+    const text = readText(rel);
+    return text === null ? "" : getMoveComment(text, game, []);
 }
 
 /** Applies `edits` to the PGN text; edits whose move no longer exists are skipped. */

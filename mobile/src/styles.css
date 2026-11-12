@@ -923,3 +923,45 @@ button.pause-toggle {
   color: var(--dim);
   font-size: 13px;
 }
+
+/* Ideas of a section */
+.entry-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.entry-row > .item {
+  flex: 1;
+  min-width: 0;
+}
+
+.ideas-btn {
+  flex: none;
+  width: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.ideas-btn.has {
+  opacity: 1;
+  filter: none;
+}
+
+.ideas-body {
+  padding: 8px 16px;
+}
+
+.ideas-list {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  line-height: 1.5;
+}
+
+.ideas-list li {
+  margin-bottom: 8px;
+}

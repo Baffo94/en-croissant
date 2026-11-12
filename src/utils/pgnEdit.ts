@@ -162,6 +162,38 @@ function locate(tokens: Token[], game: number, line: readonly string[]): number 
     return null;
 }
 
+/**
+ * Token index where the movetext of game `game` starts (its first comment, move number,
+ * move or result), or null when the game has no movetext.
+ */
+function locateStart(tokens: Token[], game: number): number | null {
+    let gameIndex = 0;
+    let inMoves = false;
+    let depth = 0;
+    for (let t = 0; t < tokens.length; t++) {
+        const tok = tokens[t];
+        if (tok.kind === "header") {
+            if (inMoves) {
+                gameIndex++;
+                inMoves = false;
+                depth = 0;
+            }
+            continue;
+        }
+        if (!inMoves) {
+            if (gameIndex === game) return t;
+            inMoves = true;
+        }
+        if (tok.kind === "open") depth++;
+        else if (tok.kind === "close") depth = Math.max(0, depth - 1);
+        else if (tok.kind === "result" && depth === 0) {
+            gameIndex++;
+            inMoves = false;
+        }
+    }
+    return null;
+}
+
 const DIRECTIVE = /\[%[^\]]*\]/g;
 
 /** Free text of a comment, without [%...] directives (as the parsers show it). */
@@ -170,7 +202,8 @@ function freeText(comment: string): string {
 }
 
 /**
- * Sets the comment text of the move reached by `line` in game `game`. Directives
+ * Sets the comment text of the move reached by `line` in game `game` (an empty `line`
+ * means the game's own comment, before the first move). Directives
  * ([%cal], [%csl], [%eval], [%clk]...) already there are kept; an empty text removes
  * the comment when it has no directives. Returns null when the move is not found.
  */
@@ -180,14 +213,21 @@ export function setMoveComment(
     line: readonly string[],
     text: string,
 ): string | null {
-    if (line.length === 0) return null;
     const tokens = tokenize(pgn);
-    const at = locate(tokens, game, line);
-    if (at === null) return null;
-    // NAGs right after the move belong to it; then its comments.
-    let k = at + 1;
-    while (k < tokens.length && tokens[k].kind === "nag") k++;
-    const first = k;
+    let first: number;
+    if (line.length === 0) {
+        // The game's own comment: the one before the first move.
+        const start = locateStart(tokens, game);
+        if (start === null) return null;
+        first = start;
+    } else {
+        const at = locate(tokens, game, line);
+        if (at === null) return null;
+        // NAGs right after the move belong to it; then its comments.
+        first = at + 1;
+        while (first < tokens.length && tokens[first].kind === "nag") first++;
+    }
+    let k = first;
     const comments: Token[] = [];
     while (k < tokens.length && tokens[k].kind === "comment" && tokens[k].text.startsWith("{")) {
         comments.push(tokens[k]);
@@ -208,6 +248,10 @@ export function setMoveComment(
         return pgn.slice(0, start) + replacement + pgn.slice(end);
     }
     if (!replacement) return pgn;
+    if (line.length === 0) {
+        const insertAt = tokens[first].start;
+        return `${pgn.slice(0, insertAt)}${replacement} ${pgn.slice(insertAt)}`;
+    }
     const insertAt = tokens[first - 1].end;
     return `${pgn.slice(0, insertAt)} ${replacement}${pgn.slice(insertAt)}`;
 }
@@ -215,10 +259,17 @@ export function setMoveComment(
 /** Current comment text (without directives) of a move, "" when none or not found. */
 export function getMoveComment(pgn: string, game: number, line: readonly string[]): string {
     const tokens = tokenize(pgn);
-    const at = locate(tokens, game, line);
-    if (at === null) return "";
-    let k = at + 1;
-    while (k < tokens.length && tokens[k].kind === "nag") k++;
+    let k: number;
+    if (line.length === 0) {
+        const start = locateStart(tokens, game);
+        if (start === null) return "";
+        k = start;
+    } else {
+        const at = locate(tokens, game, line);
+        if (at === null) return "";
+        k = at + 1;
+        while (k < tokens.length && tokens[k].kind === "nag") k++;
+    }
     const texts: string[] = [];
     while (k < tokens.length && tokens[k].kind === "comment" && tokens[k].text.startsWith("{")) {
         texts.push(freeText(tokens[k].text.slice(1, -1)));
