@@ -7,6 +7,7 @@ mod chess;
 mod db;
 mod engine;
 mod error;
+mod evalcache;
 mod game;
 mod vision;
 
@@ -130,6 +131,10 @@ fn main() {
             get_best_moves,
             analyze_game,
             cancel_analysis,
+            evalcache::eval_cache_stats,
+            evalcache::eval_cache_clear,
+            evalcache::eval_cache_get,
+            evalcache::eval_cache_put,
             stop_engine,
             kill_engine,
             kill_engines,

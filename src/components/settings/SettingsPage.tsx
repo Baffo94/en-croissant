@@ -76,6 +76,7 @@ import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import classes from "./SettingsPage.module.css";
 import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
+import { EvalCacheCloud, EvalCacheEnabled, EvalCacheSize } from "./EvalCacheSettings";
 import { RepertoireCheckRatings, RepertoireCheckSpeeds } from "./RepertoireCheckSettings";
 import SyncSettings from "./SyncSettings";
 import ThemeButton from "./ThemeButton";
@@ -577,6 +578,30 @@ export default function Page() {
             onChange={(val) => setPracticeAutoDifficulty(val as "none" | "1" | "2" | "3" | "4")}
           />
         ),
+      },
+      {
+        id: "eval-cache-enabled",
+        category: "repertoire",
+        title: t("Settings.EvalCache.Enabled"),
+        description: t("Settings.EvalCache.Enabled.Desc"),
+        keywords: ["evaluation", "cache", "database", "engine", "opening", "report"],
+        render: () => <EvalCacheEnabled />,
+      },
+      {
+        id: "eval-cache-cloud",
+        category: "repertoire",
+        title: t("Settings.EvalCache.Cloud"),
+        description: t("Settings.EvalCache.Cloud.Desc"),
+        keywords: ["evaluation", "cloud", "lichess", "engine", "opening"],
+        render: () => <EvalCacheCloud />,
+      },
+      {
+        id: "eval-cache-size",
+        category: "repertoire",
+        title: t("Settings.EvalCache.Database"),
+        description: t("Settings.EvalCache.Database.Desc"),
+        keywords: ["evaluation", "cache", "database", "clear"],
+        render: () => <EvalCacheSize />,
       },
       {
         id: "repertoire-check-ratings",

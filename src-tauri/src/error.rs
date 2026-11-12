@@ -95,6 +95,9 @@ pub enum Error {
 
     #[error("The engine is not responding")]
     EngineNotResponding,
+
+    #[error("Evaluation database: {0}")]
+    EvalCache(String),
 }
 
 impl From<std::io::Error> for Error {

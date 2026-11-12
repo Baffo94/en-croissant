@@ -746,3 +746,11 @@ export const repertoireCheckSettingsAtom = atomWithStorage<{ ratings: number[]; 
     undefined,
     { getOnInit: true },
 );
+
+/** Local database of opening evaluations: use it, and ask the Lichess cloud too. */
+export const evalCacheSettingsAtom = atomWithStorage<{ enabled: boolean; cloud: boolean }>(
+    "eval-cache-settings",
+    { enabled: true, cloud: true },
+    undefined,
+    { getOnInit: true },
+);

@@ -5,6 +5,7 @@ import { atomWithStorage } from "jotai/utils";
 import { notifications } from "@mantine/notifications";
 import { memo, useContext, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { evalCacheSettings } from "@/utils/evalCache";
 import { useStore } from "zustand";
 import { commands, type GoMode } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
@@ -101,6 +102,9 @@ function ReportModal({
           referenceDb,
           reversed: form.values.reversed,
           moves,
+          // Opening positions already evaluated are not analysed again.
+          evalCache: evalCacheSettings().enabled,
+          cloudEval: evalCacheSettings().enabled && evalCacheSettings().cloud,
         },
         engineSettings,
       )

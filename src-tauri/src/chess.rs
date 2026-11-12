@@ -30,6 +30,7 @@ use vampirc_uci::{
 
 use crate::{
     db::{position_in_db_blocking, GameQuery, PositionQueryJs},
+    evalcache,
     engine::{
         parse_fen_and_apply_moves, BaseEngine, EngineLog, EngineOption, EngineReader, GoMode,
     },
@@ -471,6 +472,86 @@ pub struct AnalysisOptions {
     pub annotate_novelties: bool,
     pub reference_db: Option<PathBuf>,
     pub reversed: bool,
+    /// Use (and fill) the local database of opening evaluations.
+    #[serde(default)]
+    pub eval_cache: bool,
+    /// Also ask the Lichess cloud for opening positions not deep enough locally.
+    #[serde(default)]
+    pub cloud_eval: bool,
+}
+
+impl BestMoves {
+    /// A stored line (score from White's point of view) as the engine would give it.
+    fn from_cached(line: &evalcache::CachedLine) -> Self {
+        let value = match (line.cp, line.mate) {
+            (_, Some(m)) => ScoreValue::Mate(m),
+            (Some(cp), None) => ScoreValue::Cp(cp),
+            (None, None) => ScoreValue::Cp(0),
+        };
+        BestMoves {
+            nodes: 0,
+            depth: line.depth,
+            score: Score {
+                value,
+                ..Default::default()
+            },
+            uci_moves: line.uci_moves.clone(),
+            san_moves: line.san_moves.clone(),
+            multipv: line.multipv,
+            nps: 0,
+        }
+    }
+
+    fn to_cached(&self) -> evalcache::CachedLine {
+        let (cp, mate) = match self.score.value {
+            ScoreValue::Cp(cp) => (Some(cp), None),
+            ScoreValue::Mate(m) => (None, Some(m)),
+        };
+        evalcache::CachedLine {
+            uci_moves: self.uci_moves.clone(),
+            san_moves: self.san_moves.clone(),
+            cp,
+            mate,
+            depth: self.depth,
+            multipv: self.multipv,
+        }
+    }
+}
+
+/// Evaluation of an opening position already known (local database, or the Lichess
+/// cloud when allowed), deep enough for `go_mode` and with `lines` lines.
+async fn known_evaluation(
+    app: &tauri::AppHandle,
+    pos: &Chess,
+    go_mode: &GoMode,
+    lines: usize,
+    cloud: &mut bool,
+) -> Option<Vec<BestMoves>> {
+    let key = evalcache::position_key(pos);
+    let mut known = evalcache::get(app, &key).ok().flatten();
+    if *cloud && !known.as_ref().map(|k| k.lichess_checked).unwrap_or(false) {
+        match evalcache::lichess_cloud(pos, lines).await {
+            evalcache::Cloud::Found(eval) => {
+                // The deeper evaluation wins (usually the cloud's).
+                let _ = evalcache::put(app, &key, &eval);
+                let _ = evalcache::mark_lichess_checked(app, &key);
+                known = evalcache::get(app, &key).ok().flatten();
+            }
+            evalcache::Cloud::Missing => {
+                let _ = evalcache::mark_lichess_checked(app, &key);
+            }
+            evalcache::Cloud::Unavailable => *cloud = false,
+        }
+    }
+    let known = known?;
+    let required = match go_mode {
+        GoMode::Depth(d) => *d,
+        _ => evalcache::TIME_MODE_MIN_DEPTH,
+    };
+    if known.depth < required || known.lines.len() < lines {
+        return None;
+    }
+    Some(known.lines.iter().take(lines).map(BestMoves::from_cached).collect())
 }
 
 /// Longest time the engine may stay silent while analysing one position of a report
@@ -664,6 +745,14 @@ pub async fn analyze_game(
     }
 
     let mut novelty_found = false;
+    // Lines the engine gives for each position (MultiPV of the report, 2 by default).
+    let wanted_lines = uci_options
+        .iter()
+        .find(|o| o.name == "MultiPV")
+        .and_then(|o| o.value.parse::<usize>().ok())
+        .unwrap_or(2)
+        .max(1);
+    let mut cloud = options.cloud_eval;
 
     for (i, (_, moves, _)) in fens.iter().enumerate() {
         if cancel_flag.load(Ordering::SeqCst) {
@@ -678,6 +767,28 @@ pub async fn analyze_game(
             (i as f32 / fens.len() as f32) * 100.0,
             false,
         )?;
+
+        // Opening positions already evaluated deeply enough are not analysed again.
+        let opening_pos = if options.eval_cache {
+            parse_fen_and_apply_moves(&options.fen, moves)
+                .ok()
+                .filter(evalcache::is_opening)
+        } else {
+            None
+        };
+        if let Some(pos) = &opening_pos {
+            let lines = wanted_lines.min(pos.legal_moves().len());
+            if lines > 0 {
+                if let Some(best) = known_evaluation(&app, pos, &go_mode, lines, &mut cloud).await
+                {
+                    analysis.push(MoveAnalysis {
+                        best,
+                        ..Default::default()
+                    });
+                    continue;
+                }
+            }
+        }
 
         // If the engine stops answering, restart it once and retry the position.
         let mut attempt = 0;
@@ -721,6 +832,20 @@ pub async fn analyze_game(
                 }
             }
         };
+        if let Some(pos) = &opening_pos {
+            if !current_analysis.best.is_empty() {
+                let depth = current_analysis.best.iter().map(|b| b.depth).min().unwrap_or(0);
+                let eval = evalcache::CachedEval {
+                    depth,
+                    lines: current_analysis.best.iter().map(BestMoves::to_cached).collect(),
+                    source: engine_name(&engine),
+                    lichess_checked: false,
+                };
+                if let Err(e) = evalcache::put(&app, &evalcache::position_key(pos), &eval) {
+                    warn!("Evaluation database: {}", e);
+                }
+            }
+        }
         analysis.push(current_analysis);
     }
     proc.kill_sync();
@@ -964,4 +1089,12 @@ pub async fn get_engine_config(path: PathBuf) -> Result<EngineConfig, Error> {
     println!("{:?}", config);
     base.quit().await?;
     Ok(config)
+}
+
+/// Engine name from its path (e.g. "stockfish-17"), recorded with stored evaluations.
+fn engine_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "engine".to_string())
 }

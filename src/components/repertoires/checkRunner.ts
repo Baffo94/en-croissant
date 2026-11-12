@@ -5,6 +5,7 @@ import { readTextFile } from "@tauri-apps/plugin-fs";
 import { atom, getDefaultStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { commands } from "@/bindings";
+import { evalCacheSettings } from "@/utils/evalCache";
 import { enginesAtom, repertoireCheckSettingsAtom, sessionsAtom } from "@/state/atoms";
 import type { LocalEngine } from "@/utils/engines";
 import { getLichessGames } from "@/utils/lichess/api";
@@ -169,7 +170,15 @@ export async function startCheck(all: CheckFile[], scope: string[], label: strin
             id,
             engine.path,
             { t: "Time", c: settings.engineMs },
-            { fen, moves: [], annotateNovelties: false, referenceDb: null, reversed: false },
+            {
+                fen,
+                moves: [],
+                annotateNovelties: false,
+                referenceDb: null,
+                reversed: false,
+                evalCache: evalCacheSettings().enabled,
+                cloudEval: evalCacheSettings().enabled && evalCacheSettings().cloud,
+            },
             settingsOfEngine,
         );
         currentAnalysis = null;

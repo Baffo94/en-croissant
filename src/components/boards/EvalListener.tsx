@@ -2,21 +2,29 @@ import { parseUci } from "chessops";
 import { INITIAL_FEN, makeFen } from "chessops/fen";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import { startTransition, useContext, useEffect, useMemo } from "react";
+import { startTransition, useContext, useEffect, useMemo, useRef } from "react";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { type EngineOptions, events, type GoMode } from "@/bindings";
+import { commands, type EngineOptions, events, type GoMode } from "@/bindings";
 import {
   activeTabAtom,
   currentThreatAtom,
   engineMovesFamily,
   engineProgressFamily,
   enginesAtom,
+  evalCacheSettingsAtom,
   firstEngineWithLinesFamily,
   tabEngineSettingsFamily,
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
+import {
+  fenAfter,
+  fromBestMoves,
+  isOpeningFen,
+  MIN_STORED_DEPTH,
+  toBestMoves,
+} from "@/utils/evalCache";
 import { getBestMoves as chessdbGetBestMoves } from "@/utils/chessdb/api";
 import { positionFromFen, swapMove } from "@/utils/chessops";
 import {
@@ -128,6 +136,14 @@ function EngineListener({
   const [, setProgress] = useAtom(engineProgressFamily({ engine: engine.id, tab: activeTab! }));
 
   const [, setEngineVariation] = useAtom(engineMovesFamily({ engine: engine.id, tab: activeTab! }));
+  const cacheSettings = useAtomValue(evalCacheSettingsAtom);
+  /**
+   * Opening position being analysed, with the depth already known from the local
+   * database: the engine's lines replace the stored ones only once they go deeper,
+   * and are stored when they do.
+   */
+  const stored = useRef<{ key: string; fen: string; depth: number } | null>(null);
+  const useCache = engine.type === "local" && cacheSettings.enabled && !threat;
   const [settings] = useAtom(
     tabEngineSettingsFamily({
       engineId: engine.id,
@@ -148,6 +164,17 @@ function EngineListener({
         settings.enabled &&
         !isGameOver
       ) {
+        const key = `${searchingFen}:${searchingMoves.join(",")}`;
+        const known = stored.current?.key === key ? stored.current : null;
+        if (known && ev[0] && ev[0].depth <= known.depth) {
+          // Still shallower than the stored evaluation, which stays on screen.
+          setProgress(payload.progress);
+          return;
+        }
+        if (known && ev[0] && ev[0].depth >= MIN_STORED_DEPTH) {
+          known.depth = ev[0].depth;
+          commands.evalCachePut(known.fen, fromBestMoves(ev, engine.name)).catch(() => {});
+        }
         startTransition(() => {
           setEngineVariation((prev) => {
             const newMap = new Map(prev);
@@ -215,6 +242,21 @@ function EngineListener({
               name: s.name,
               value: s.value?.toString() || "",
             })) ?? [];
+          // Opening position: show the stored evaluation at once while the engine starts.
+          const key = `${searchingFen}:${searchingMoves.join(",")}`;
+          const target = useCache ? fenAfter(searchingFen, searchingMoves) : null;
+          stored.current = target && isOpeningFen(target) ? { key, fen: target, depth: 0 } : null;
+          if (stored.current) {
+            const pending = stored.current;
+            commands.evalCacheGet(pending.fen).then((r) => {
+              if (stored.current !== pending || r.status !== "ok" || !r.data?.lines.length) return;
+              pending.depth = r.data.depth;
+              const lines = toBestMoves(r.data);
+              setEngineVariation((prev) => new Map(prev).set(key, lines));
+              if (firstEngineWithLines === engine.id || firstEngineWithLines === null)
+                setScore(lines[0].score);
+            });
+          }
           getBestMoves(activeTab!, settings.go, {
             moves: searchingMoves,
             fen: searchingFen,

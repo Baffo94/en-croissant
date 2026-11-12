@@ -37,6 +37,44 @@ async analyzeGame(id: string, engine: string, goMode: GoMode, options: AnalysisO
     else return { status: "error", error: e  as any };
 }
 },
+async evalCacheStats() : Promise<Result<EvalCacheStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("eval_cache_stats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async evalCacheClear() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("eval_cache_clear") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stored evaluation of a position (any FEN; only opening positions are kept).
+ */
+async evalCacheGet(fen: string) : Promise<Result<CachedEval | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("eval_cache_get", { fen }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the evaluation of an opening position (kept only if deeper than the stored one).
+ */
+async evalCachePut(fen: string, evaluation: CachedEval) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("eval_cache_put", { fen, eval: evaluation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async cancelAnalysis(id: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cancel_analysis", { id }) };
@@ -516,7 +554,29 @@ progressEvent: "progress-event"
 
 /** user-defined types **/
 
-export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: string | null; reversed: boolean }
+export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: string | null; reversed: boolean; 
+/**
+ * Use (and fill) the local database of opening evaluations.
+ */
+evalCache?: boolean; 
+/**
+ * Also ask the Lichess cloud for opening positions not deep enough locally.
+ */
+cloudEval?: boolean }
+export type CachedEval = { depth: number; lines: CachedLine[]; 
+/**
+ * "lichess" or the name of the local engine.
+ */
+source: string; 
+/**
+ * The Lichess cloud was already asked about this position.
+ */
+lichessChecked: boolean }
+/**
+ * One line of an evaluation; the score is from White's point of view.
+ */
+export type CachedLine = { uciMoves: string[]; sanMoves: string[]; cp: number | null; mate: number | null; depth: number; multipv: number }
+export type EvalCacheStats = { positions: number; bytes: number }
 export type BestMoves = { nodes: number; depth: number; score: Score; uciMoves: string[]; sanMoves: string[]; multipv: number; nps: number }
 export type BestMovesPayload = { bestLines: BestMoves[]; engine: string; tab: string; fen: string; moves: string[]; progress: number }
 export type ClockUpdateEvent = { gameId: string; whiteTime: bigint | null; blackTime: bigint | null }
