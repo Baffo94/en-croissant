@@ -2,6 +2,7 @@
 import { AppShellSection, Stack, Tooltip } from "@mantine/core";
 import {
   type Icon,
+  IconBarbell,
   IconBook,
   IconChartBar,
   IconChess,
@@ -46,6 +47,7 @@ const linksdata = [
   { icon: IconFiles, label: "Files", url: "/files" },
   { icon: IconBook, label: "Repertoires", url: "/repertoires" },
   { icon: IconChartBar, label: "Statistics", url: "/statistics" },
+  { icon: IconBarbell, label: "Training", url: "/training" },
   {
     icon: IconDatabase,
     label: "Databases",

@@ -989,33 +989,82 @@
     "TimeControl.Classical": "Klassisch",
     "TimeControl.Correspondence": "Fernschach",
     "TimeControl.Rapid": "Rapid",
-    "TimeControl.UltraBullet": "Ultrabullet"
-  },
-  "2026-11-13T10": {
-    "00:00Z": ""
-  },
-  "2026-11-13T11": {
-    "00:00Z": ""
-  },
-  "2026-11-13T12": {
-    "00:00Z": ""
-  },
-  "2026-11-14T10": {
-    "00:00Z": ""
-  },
-  "2026-11-01T00": {
-    "00:00Z": ""
-  },
-  "2026-11-02T00": {
-    "00:00Z": ""
-  },
-  "2026-11-03T00": {
-    "00:00Z": ""
-  },
-  "2026-11-05T00": {
-    "00:00Z": ""
-  },
-  "2027-03-01T00": {
-    "00:00Z": ""
+    "TimeControl.UltraBullet": "Ultrabullet",
+    "Training.Back": "",
+    "Training.Candidates.All": "",
+    "Training.Candidates.Ask": "",
+    "Training.Candidates.Checking": "",
+    "Training.Candidates.Choose": "",
+    "Training.Candidates.Done": "",
+    "Training.Candidates.DoneCount": "",
+    "Training.Candidates.Empty": "",
+    "Training.Candidates.EngineLines": "",
+    "Training.Candidates.Eval": "",
+    "Training.Candidates.FoundBest": "",
+    "Training.Candidates.FoundBestRate": "",
+    "Training.Candidates.GoodChoiceRate": "",
+    "Training.Candidates.Intro": "",
+    "Training.Candidates.Left": "",
+    "Training.Candidates.MissedBest": "",
+    "Training.Candidates.Moments": "",
+    "Training.Candidates.MyChoice": "",
+    "Training.Candidates.NewCount": "",
+    "Training.Candidates.NoEngine": "",
+    "Training.Candidates.Start": "",
+    "Training.Candidates.Verify": "",
+    "Training.Candidates.YourMoves": "",
+    "Training.Due": "",
+    "Training.Endgames.Better": "",
+    "Training.Endgames.Done": "",
+    "Training.Endgames.GoalDraw": "",
+    "Training.Endgames.Hint": "",
+    "Training.Endgames.HintNote": "",
+    "Training.Endgames.Intro": "",
+    "Training.Endgames.Mismatch": "",
+    "Training.Endgames.NoneDue": "",
+    "Training.Endgames.PlayChapter": "",
+    "Training.Endgames.Progress": "",
+    "Training.Endgames.ReviewDue": "",
+    "Training.Endgames.Score": "",
+    "Training.Endgames.Thinking": "",
+    "Training.Endgames.YouPlay": "",
+    "Training.Finish": "",
+    "Training.New": "",
+    "Training.NewPerDay": "",
+    "Training.Next": "",
+    "Training.NextReview": "",
+    "Training.NothingToday": "",
+    "Training.OpenGame": "",
+    "Training.Retry": "",
+    "Training.Seen": "",
+    "Training.Skip": "",
+    "Training.Start": "",
+    "Training.Stop": "",
+    "Training.Subtitle": "",
+    "Training.Success": "",
+    "Training.Tabs.Candidates": "",
+    "Training.Tabs.Endgames": "",
+    "Training.Tabs.Tactics": "",
+    "Training.Tactics.AlsoGood": "",
+    "Training.Tactics.Checking": "",
+    "Training.Tactics.Done": "",
+    "Training.Tactics.Empty": "",
+    "Training.Tactics.Find": "",
+    "Training.Tactics.From": "",
+    "Training.Tactics.GoToStats": "",
+    "Training.Tactics.InGame": "",
+    "Training.Tactics.Intro": "",
+    "Training.Tactics.Left": "",
+    "Training.Tactics.NoEngine": "",
+    "Training.Tactics.PhoneNote": "",
+    "Training.Tactics.Right": "",
+    "Training.Tactics.Score": "",
+    "Training.Tactics.Split": "",
+    "Training.Tactics.Total": "",
+    "Training.Tactics.Wrong": "",
+    "Training.Tactics.YourEval": "",
+    "Training.Title": "",
+    "Training.Today": "",
+    "Training.TodaySplit": ""
   }
 }

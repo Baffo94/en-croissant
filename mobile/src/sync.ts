@@ -12,6 +12,8 @@ import {
     type SyncSummary,
 } from "@/utils/sync/engine";
 import { mergeFlags } from "@/utils/flags";
+import { trainingDocs } from "@/utils/training/syncDocs";
+import { phoneTrainingStore } from "./training";
 import { emptyDeck, mergeDecks } from "@/utils/sync/core";
 import { GitHubClient } from "@/utils/sync/github";
 import { gitBlobSha } from "@/utils/sync/core";
@@ -100,6 +102,9 @@ const memoryEnv: SyncEnv = {
     },
     getPause(rel) {
         return getState().pauses?.[rel] ?? null;
+    },
+    docs() {
+        return trainingDocs(phoneTrainingStore, "phone");
     },
     getFlags(rel) {
         return structuredClone(getState().flags?.[rel] ?? []);

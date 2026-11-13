@@ -292,7 +292,7 @@ export function serializeProgress(
  * the same cards and logs with keys in different orders; without this every sync
  * rewrote all progress files even when nothing had changed.
  */
-function canonical(value: unknown): unknown {
+export function canonical(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(canonical);
     if (value && typeof value === "object" && !(value instanceof Date)) {
         const out: Record<string, unknown> = {};

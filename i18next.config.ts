@@ -22,7 +22,7 @@ export default defineConfig({
     extract: {
         input: ["src/**/*.{ts,tsx}"],
         output: "src/translation/{{language}}.json",
-        ignore: ["src/translation/**"],
+        ignore: ["src/translation/**", "src/**/tests/**", "src/**/*.test.{ts,tsx}"],
         // Keys use dots as part of the key name (e.g. "Common.On"), not as nesting separators
         keySeparator: false,
         defaultNS: "translation",
@@ -51,6 +51,12 @@ export default defineConfig({
             "Statistics.Session.*",
             "Statistics.Phase.*",
             "Statistics.PhaseIn.*",
+            "Training.Side.*",
+            "Training.Tactics.Kind.*",
+            "Training.Endgames.GoalWin.*",
+            "Training.Endgames.Verdict.*",
+            "Training.Candidates.Kind.*",
+            "Training.Candidates.Verdict.*",
         ],
         sort: true,
     },

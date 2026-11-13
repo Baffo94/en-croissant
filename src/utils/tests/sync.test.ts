@@ -21,6 +21,9 @@ import {
     type SyncEnv,
 } from "../sync/engine";
 import { flagAt, type ReviewFlag, resolveFlag, setFlag } from "../flags";
+import { reviewExercise } from "../training/srs";
+import { trainingDocs } from "../training/syncDocs";
+import { emptyTrainingProgress, parseTrainingProgress, stableJson } from "../training/trainingDocs";
 import { setMoveComment } from "../pgnEdit";
 import { GitHubClient, GitHubError, type NewTreeEntry, type TreeEntry } from "../sync/github";
 
@@ -274,6 +277,24 @@ class MemoryEnv implements SyncEnv {
     decks = new Map<string, Record<string, PracticeData>>();
     pauses = new Map<string, PauseState>();
     flags = new Map<string, ReviewFlag[]>();
+    training: { pack: string | null; progress: string | null } = { pack: null, progress: null };
+    role: "pc" | "phone" | null = null;
+    docs() {
+        if (!this.role) return [];
+        return trainingDocs(
+            {
+                readPack: () => this.training.pack,
+                writePack: (t) => {
+                    this.training.pack = t;
+                },
+                readProgress: () => this.training.progress,
+                writeProgress: (t) => {
+                    this.training.progress = t;
+                },
+            },
+            this.role,
+        );
+    }
     getFlags(rel: string) {
         return structuredClone(this.flags.get(rel) ?? []);
     }
@@ -801,6 +822,51 @@ describe("pause", () => {
         await runSync(pc, client(repo), first.manifest);
         expect(pc.getPause("Scozzese.pgn")?.paused).toBe(true);
         expect(parseProgressFile(repo.text("progress/Scozzese.json")!).pause?.paused).toBe(true);
+    });
+});
+
+describe("training documents", () => {
+    test("the PC's tactics reach the phone; progress is merged both ways", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.role = "pc";
+        pc.put("Philidor.pgn", "1. e4 *");
+        const pack = stableJson({ version: 1, built: "2026-11-13", tactics: [{ id: "g#1" }] });
+        pc.training.pack = pack;
+        const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
+        expect(repo.text("training/tactics.json")).toBe(pack);
+
+        const phone = new MemoryEnv();
+        phone.role = "phone";
+        const phoneFirst = await runSync(phone, client(repo), emptyManifest("phone"), {
+            readOnlyContent: true,
+        });
+        expect(phone.training.pack).toBe(pack);
+
+        // The phone solves a tactic and plays an endgame; it cannot change the pack.
+        const progress = emptyTrainingProgress();
+        progress.tactics["g#1"] = reviewExercise(
+            undefined,
+            "good",
+            new Date("2026-11-13T10:00:00Z"),
+        );
+        progress.endgames["mate-queen"] = reviewExercise(undefined, "again");
+        phone.training.progress = stableJson(progress);
+        phone.training.pack = "tampered";
+        await runSync(phone, client(repo), phoneFirst.manifest, { readOnlyContent: true });
+        expect(repo.text("training/tactics.json")).toBe(pack);
+
+        // Meanwhile the PC reviewed another tactic.
+        const pcProgress = emptyTrainingProgress();
+        pcProgress.tactics["g#2"] = reviewExercise(undefined, "good");
+        pc.training.progress = stableJson(pcProgress);
+        await runSync(pc, client(repo), pcFirst.manifest);
+        const merged = parseTrainingProgress(pc.training.progress);
+        expect(Object.keys(merged.tactics).sort()).toEqual(["g#1", "g#2"]);
+        expect(Object.keys(merged.endgames)).toEqual(["mate-queen"]);
+        expect(
+            parseTrainingProgress(repo.text("training/progress.json")!).tactics["g#1"],
+        ).toBeDefined();
     });
 });
 

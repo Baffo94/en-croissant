@@ -1,0 +1,8 @@
+/* The board of an exercise: as tall as the window allows below the page header, and
+   square, so that the side panel stays next to it. */
+.boardArea {
+  flex: 0 1 calc(100vh - 250px);
+  min-width: 280px;
+  height: calc(100vh - 250px);
+  min-height: 320px;
+}

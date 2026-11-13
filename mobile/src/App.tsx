@@ -1,11 +1,13 @@
 import { App as CapApp } from "@capacitor/app";
 import { useEffect, useRef, useState } from "react";
 import { handleBack } from "./back";
+import { Endgames } from "./components/Endgames";
 import { Home } from "./components/Home";
 import { Ideas } from "./components/Ideas";
 import { Practice, type PracticeSource } from "./components/Practice";
 import { practiceName } from "./repertoires";
 import { Settings } from "./components/Settings";
+import { Tactics } from "./components/Tactics";
 import { flushState, getState, useAppState } from "./state";
 import { isConfigured, syncNow } from "./sync";
 
@@ -13,7 +15,9 @@ type Screen =
   | { kind: "home" }
   | { kind: "settings" }
   | { kind: "practice"; sources: PracticeSource[]; title: string; mixed: boolean }
-  | { kind: "ideas"; rel: string; game: number; title: string };
+  | { kind: "ideas"; rel: string; game: number; title: string }
+  | { kind: "tactics" }
+  | { kind: "endgames" };
 
 export function App() {
   const configured = useAppState((s) => isConfigured(s.config));
@@ -66,6 +70,8 @@ export function App() {
       />
     );
   }
+  if (screen.kind === "tactics") return <Tactics onBack={() => setScreen({ kind: "home" })} />;
+  if (screen.kind === "endgames") return <Endgames onBack={() => setScreen({ kind: "home" })} />;
   if (screen.kind === "practice") {
     return (
       <Practice
@@ -107,6 +113,8 @@ export function App() {
       onIdeas={(entry) =>
         setScreen({ kind: "ideas", rel: entry.rel, game: entry.game, title: practiceName(entry) })
       }
+      onTactics={() => setScreen({ kind: "tactics" })}
+      onEndgames={() => setScreen({ kind: "endgames" })}
     />
   );
 }

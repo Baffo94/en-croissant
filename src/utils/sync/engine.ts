@@ -40,7 +40,25 @@ export interface SyncEnv {
     /** Moves flagged to review in a PGN file (resolved ones included, as tombstones). */
     getFlags(relPgn: string): ReviewFlag[];
     setFlags(relPgn: string, flags: ReviewFlag[]): void;
+    /** Other synced documents (training files), each with its own merge rule. */
+    docs?(): SyncDoc[];
 }
+
+/** A JSON document kept in the repository outside the repertoires (e.g. training data). */
+export type SyncDoc = {
+    /** Path in the repository, under "training/". */
+    path: string;
+    /** Local text, null when this device has none. */
+    read(): string | null;
+    /** Stores the merged text locally. */
+    write(text: string): void;
+    /** Local and remote text (remote is null when absent or unchanged since the last sync). */
+    merge(local: string | null, remote: string | null): string | null;
+    /** Whether this device uploads its version. */
+    upload: boolean;
+};
+
+export const DOCS_PREFIX = "training/";
 
 export type SyncManifest = {
     /** Identifies repo + branch + folder; the manifest is ignored if they change. */
@@ -52,6 +70,8 @@ export type SyncManifest = {
     files: Record<string, string>;
     /** Progress files at the end of the last sync: remote path -> blob sha. */
     progress: Record<string, string>;
+    /** Other documents (training/...) at the end of the last sync: path -> blob sha. */
+    docs?: Record<string, string>;
     lastSync: string | null;
 };
 
@@ -194,11 +214,13 @@ export async function runSync(
     let baseTree: string;
     const remoteContent = new Map<string, string>();
     const remoteProgress = new Map<string, string>();
+    const remoteDocs = new Map<string, string>();
     if (previous.tree && previous.head === head) {
         // Nothing was pushed since our last sync: the remote is what we left there.
         baseTree = previous.tree;
         for (const [rel, sha] of Object.entries(previous.files)) remoteContent.set(rel, sha);
         for (const [path, sha] of Object.entries(previous.progress)) remoteProgress.set(path, sha);
+        for (const [path, sha] of Object.entries(previous.docs ?? {})) remoteDocs.set(path, sha);
     } else {
         baseTree = await client.getCommitTree(head);
         for (const entry of await client.getTree(baseTree)) {
@@ -207,6 +229,8 @@ export async function runSync(
                 if (isContentPath(rel)) remoteContent.set(rel, entry.sha);
             } else if (entry.path.startsWith(PROGRESS_PREFIX) && entry.path.endsWith(".json")) {
                 remoteProgress.set(entry.path, entry.sha);
+            } else if (entry.path.startsWith(DOCS_PREFIX) && entry.path.endsWith(".json")) {
+                remoteDocs.set(entry.path, entry.sha);
             }
         }
     }
@@ -391,6 +415,31 @@ export async function runSync(
         }
     }
 
+    // 4b. Other documents (training data)
+    const docsManifest: Record<string, string> = {};
+    for (const doc of env.docs?.() ?? []) {
+        const remoteSha = remoteDocs.get(doc.path);
+        let remoteText: string | null = null;
+        if (remoteSha && remoteSha !== previous.docs?.[doc.path]) {
+            remoteText = decoder.decode(await blob(remoteSha));
+        }
+        const local = doc.read();
+        const merged = doc.merge(local, remoteText);
+        if (merged !== null && merged !== local) {
+            doc.write(merged);
+            summary.progressUpdated++;
+        }
+        if (doc.upload && merged !== null) {
+            const sha = await gitBlobSha(encoder.encode(merged));
+            if (sha !== remoteSha) {
+                entries.push({ path: doc.path, mode: "100644", type: "blob", content: merged });
+            }
+            docsManifest[doc.path] = sha;
+        } else if (remoteSha) {
+            docsManifest[doc.path] = remoteSha;
+        }
+    }
+
     // 5. Commit
     let newHead = head;
     let newTree = baseTree;
@@ -416,6 +465,7 @@ export async function runSync(
             tree: newTree,
             files: Object.fromEntries(finalContent),
             progress: progressManifest,
+            docs: docsManifest,
             lastSync: now.toISOString(),
         },
         summary,

@@ -5,6 +5,8 @@ import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
 import type { ReviewFlag } from "@/utils/flags";
+import type { TacticsPack } from "@/utils/training/tactics";
+import type { TrainingProgress } from "@/utils/training/trainingDocs";
 import type { PauseState } from "@/utils/sync/core";
 import type { SyncManifest } from "@/utils/sync/engine";
 import { DEFAULT_BOARD, DEFAULT_PIECES } from "./boardThemes";
@@ -39,6 +41,8 @@ export type AppState = {
     pauses: Record<string, PauseState>;
     /** relPgn -> moves flagged to review (synced through the progress files). */
     flags?: Record<string, ReviewFlag[]>;
+    /** Tactics pack from the PC and progress of tactics and endgames (synced). */
+    training?: { pack: TacticsPack | null; progress: TrainingProgress };
 };
 
 const FILE = "state.json";

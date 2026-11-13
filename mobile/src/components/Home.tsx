@@ -5,8 +5,12 @@ import { scheduleSync, syncNow, useSyncStatus } from "../sync";
 import { ideaPoints } from "@/utils/ideas";
 import { getGameComment } from "../comments";
 import { useOpenFlagCount } from "../reviewFlags";
+import { ENDGAMES } from "@/utils/training/endgames";
+import { isDue, planSession } from "@/utils/training/srs";
+import { useTraining } from "../training";
 import { Icon } from "./Icon";
 import { Header } from "./Practice";
+import { TACTICS_PER_DAY } from "./Tactics";
 
 const PAUSE_SYNC_DELAY = 3_000;
 const EXPANDED_KEY = "home-groups-expanded";
@@ -188,18 +192,92 @@ function GroupItem({
   );
 }
 
+/** Entry points of the training: tactics from your games (prepared on the PC), endgames. */
+function TrainingSection({
+  tick,
+  onTactics,
+  onEndgames,
+}: {
+  tick: number;
+  onTactics: () => void;
+  onEndgames: () => void;
+}) {
+  const training = useTraining();
+  const counts = useMemo(() => {
+    const progress = training?.progress;
+    const tactics = training?.pack?.tactics ?? [];
+    const plan = planSession(
+      tactics.map((t) => t.id),
+      progress?.tactics ?? {},
+      TACTICS_PER_DAY,
+    );
+    const endgames = progress?.endgames ?? {};
+    return {
+      tactics: tactics.length,
+      tacticsDue: plan.due,
+      tacticsNew: plan.fresh,
+      endgamesDue: ENDGAMES.filter((e) => isDue(endgames[e.id])).length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [training, tick]);
+  return (
+    <>
+      <h2 className="section-title">Allenamento</h2>
+      <ul className="list">
+        <li>
+          <button type="button" className="item" onClick={onTactics}>
+            <span className="item-icon">
+              <Icon name="target" size={20} />
+            </span>
+            <span className="item-main">
+              <span className="item-name">Tattiche</span>
+              <span className="item-folder">
+                {counts.tactics
+                  ? `${counts.tactics} posizioni dalle tue partite`
+                  : "Si preparano sul PC dalle tue partite"}
+              </span>
+            </span>
+            <span className="item-stats">
+              {counts.tacticsDue > 0 && <span className="pill due">{counts.tacticsDue}</span>}
+              {counts.tacticsNew > 0 && <span className="pill new">{counts.tacticsNew}</span>}
+            </span>
+          </button>
+        </li>
+        <li>
+          <button type="button" className="item" onClick={onEndgames}>
+            <span className="item-icon">
+              <Icon name="crown" size={20} />
+            </span>
+            <span className="item-main">
+              <span className="item-name">Finali teorici</span>
+              <span className="item-folder">{ENDGAMES.length} finali contro le tablebase</span>
+            </span>
+            <span className="item-stats">
+              {counts.endgamesDue > 0 && <span className="pill due">{counts.endgamesDue}</span>}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </>
+  );
+}
+
 export function Home({
   onOpen,
   onTrainAll,
   onTrainGroup,
   onSettings,
   onIdeas,
+  onTactics,
+  onEndgames,
 }: {
   onOpen: (entry: RepertoireEntry) => void;
   onTrainAll: (entries: RepertoireEntry[]) => void;
   onTrainGroup: (name: string, entries: RepertoireEntry[]) => void;
   onSettings: () => void;
   onIdeas: (entry: RepertoireEntry) => void;
+  onTactics: () => void;
+  onEndgames: () => void;
 }) {
   const files = useAppState((s) => s.files);
   const decks = useAppState((s) => s.decks);
@@ -330,6 +408,7 @@ export function Home({
           )}
         </>
       )}
+      <TrainingSection tick={tick} onTactics={onTactics} onEndgames={onEndgames} />
       {lastSync && (
         <p className="footer">
           Ultima sincronizzazione: {new Date(lastSync).toLocaleString("it-IT")}
