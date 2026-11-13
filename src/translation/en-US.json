@@ -591,6 +591,8 @@
     "Repertoires.Due_other": "{{count}} due",
     "Repertoires.DuplicateNames": "The names must be different",
     "Repertoires.Empty": "No repertoires yet. Create one, or mark a PGN file as Repertoire in the Files section.",
+    "Repertoires.Flags.Badge_one": "{{count}} to review",
+    "Repertoires.Flags.Badge_other": "{{count}} to review",
     "Repertoires.Flags.Count_one": "{{count}} move flagged to review",
     "Repertoires.Flags.Count_other": "{{count}} moves flagged to review",
     "Repertoires.Flags.Edit": "Edit the note",

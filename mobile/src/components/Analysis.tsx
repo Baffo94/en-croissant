@@ -13,7 +13,8 @@ import { Board } from "./Board";
 import { ExplorerPanel } from "./ExplorerPanel";
 import type { FlagProps } from "../reviewFlags";
 import { CommentItem } from "./CommentItem";
-import { FlagItem } from "./FlagItem";
+import { numbered } from "../moveLabel";
+import { Icon } from "./Icon";
 import { Header } from "./Practice";
 
 type Ply = { san: string; uci: string; fen: string };
@@ -185,7 +186,7 @@ export function Analysis({
               aria-label="Gira la scacchiera"
               onClick={() => setFlipped((f) => !f)}
             >
-              ⇅
+              <Icon name="flip" size={22} />
             </button>
             <button
               type="button"
@@ -292,7 +293,13 @@ export function Analysis({
           if (!flag) return null;
           return (
             <div className="notes analysis-note">
-              <FlagItem key={ply} {...flag} />
+              <CommentItem
+                key={ply}
+                label={numbered(startFen, ply, history[i].san)}
+                text=""
+                flag={flag}
+                outside
+              />
             </div>
           );
         }
@@ -301,7 +308,7 @@ export function Analysis({
           <div className="notes analysis-note">
             <CommentItem
               key={`${ply}-${note}`}
-              label={history[i].san}
+              label={numbered(startFen, ply, history[i].san)}
               text={note}
               onSave={onEditComment ? (text) => onEditComment(ply, text) : undefined}
               flag={flag}

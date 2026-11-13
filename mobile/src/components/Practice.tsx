@@ -22,8 +22,11 @@ import { setComment } from "../comments";
 import { setDeck, setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow } from "../sync";
 import { Analysis } from "./Analysis";
+import { numbered } from "../moveLabel";
+import { Icon } from "./Icon";
 import { Ideas } from "./Ideas";
-import { flagProps, useFlags } from "../reviewFlags";
+import { flagAt } from "@/utils/flags";
+import { flagProps } from "../reviewFlags";
 import { Board } from "./Board";
 import { CommentItem, type NoteItem } from "./CommentItem";
 
@@ -93,7 +96,7 @@ function withSymbols(node: TreeNode | undefined, san: string): string {
   return `${san}${symbols}`;
 }
 
-/** Comments of the moves shown; editable ones have ✏️ (or "+ commento" when empty). */
+/** The moves shown, with their comments and flags (actions in each move's header). */
 function Notes({ items }: { items: NoteItem[] }) {
   const visible = items.filter((i) => i.text.trim() || i.onSave);
   if (visible.length === 0) return null;
@@ -179,6 +182,8 @@ export function Practice({
 
   const singleRel = sources.length === 1 ? sources[0].rel : null;
   const paused = useAppState((s) => (singleRel ? s.pauses?.[singleRel]?.paused === true : false));
+  // Flags of every file (read here, before any early return, as hooks must be).
+  const flagsByFile = useAppState((s) => s.flags);
   const keys = Object.keys(prepared.sources);
   if (keys.length === 0) {
     return (
@@ -202,7 +207,7 @@ export function Practice({
    * Writes the comment of `node` (reached by `line`) in the PGN, like on the PC, and
    * shows it at once. The sync uploads the file.
    */
-  const flags = useFlags(currentSource.source.rel);
+  const flags = flagsByFile?.[currentSource.source.rel] ?? [];
   /** Flag "to review on the PC" of the move reached by `line`. */
   const flagOf = (line: string[]) =>
     flagProps(flags, currentSource.source.rel, currentSource.source.game, line);
@@ -419,7 +424,7 @@ export function Practice({
               aria-label="Idee della variante"
               onClick={() => setShowIdeas(true)}
             >
-              💡
+              <Icon name="bulb" size={22} />
             </button>
             {!mixed && singleRel && (
               <button
@@ -430,7 +435,10 @@ export function Practice({
                   scheduleSync(PAUSE_SYNC_DELAY);
                 }}
               >
-                {paused ? "▶ Riattiva" : "⏸ Pausa"}
+                <span className="with-icon">
+                  <Icon name={paused ? "play" : "pause"} size={16} />
+                  {paused ? "Riattiva" : "Pausa"}
+                </span>
               </button>
             )}
           </>
@@ -474,7 +482,15 @@ export function Practice({
                 <button
                   key={ply}
                   type="button"
-                  className={`move ${(viewPly ?? livePly) === ply ? "current" : ""} ${node.comment ? "has-note" : ""}`}
+                  className={`move ${(viewPly ?? livePly) === ply ? "current" : ""} ${node.comment ? "has-note" : ""} ${
+                    flagAt(
+                      flags,
+                      currentSource.source.game,
+                      nodes.slice(1, ply + 1).map((n) => n.san ?? ""),
+                    )
+                      ? "has-flag"
+                      : ""
+                  }`}
                   onClick={() => setViewPly(ply === livePly ? null : ply)}
                 >
                   <span className="num">{number}</span>
@@ -567,7 +583,14 @@ export function Practice({
             <Notes
               items={[
                 {
-                  label: withSymbols(nodes[viewPly!], nodes[viewPly!].san ?? "Inizio"),
+                  label:
+                    viewPly! > 0
+                      ? numbered(
+                          pgn.root.fen,
+                          viewPly!,
+                          withSymbols(nodes[viewPly!], nodes[viewPly!].san ?? ""),
+                        )
+                      : "Inizio",
                   text: nodes[viewPly!].comment ?? "",
                   onSave:
                     viewPly! > 0
@@ -645,7 +668,11 @@ export function Practice({
               ...(lastNode
                 ? [
                     {
-                      label: withSymbols(lastNode, lastNode.san ?? ""),
+                      label: numbered(
+                        pgn.root.fen,
+                        lineSans.length,
+                        withSymbols(lastNode, lastNode.san ?? ""),
+                      ),
                       text: lastNode.comment ?? "",
                       onSave: (text: string) => saveComment(lastNode, lineSans, text),
                       flag: flagOf(lineSans),
@@ -653,7 +680,11 @@ export function Practice({
                   ]
                 : [{ label: "Inizio", text: pgn.root.comment ?? "" }]),
               {
-                label: withSymbols(answerNode, position.answer),
+                label: numbered(
+                  pgn.root.fen,
+                  lineSans.length + 1,
+                  withSymbols(answerNode, position.answer),
+                ),
                 text: answerNode?.comment ?? "",
                 onSave: (text: string) =>
                   saveComment(answerNode, [...lineSans, position.answer], text),

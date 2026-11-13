@@ -3,6 +3,7 @@ import { ideaPoints, ideasDraft, ideasText } from "@/utils/ideas";
 import { useBackHandler } from "../back";
 import { getGameComment, setComment } from "../comments";
 import { useAppState } from "../state";
+import { Icon } from "./Icon";
 import { Header } from "./Practice";
 
 /**
@@ -30,7 +31,7 @@ export function Ideas({
 
   return (
     <div className="screen ideas">
-      <Header title={`💡 ${title}`} onBack={onBack} />
+      <Header title={`Idee · ${title}`} onBack={onBack} />
       <div className="ideas-body">
         {editing ? (
           <div className="comment-edit">
@@ -80,7 +81,7 @@ export function Ideas({
                 setEditing(true);
               }}
             >
-              ✏️ Modifica
+              <Icon name="pencil" size={16} /> Modifica
             </button>
           </>
         )}

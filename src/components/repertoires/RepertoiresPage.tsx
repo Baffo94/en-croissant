@@ -261,7 +261,7 @@ function ColorDot({ orientation, size = 18 }: { orientation?: "white" | "black";
 }
 
 /** Progress ring, badges and dates: shared by repertoire and group cards. */
-function StatsBody({ stats, paused, toDo }: FileState) {
+function StatsBody({ stats, paused, toDo, flags }: FileState & { flags?: FlagsInfo }) {
   const { t } = useTranslation();
   const fromNow = useFromNow();
   const pct = (n: number) => (stats.total > 0 ? (n / stats.total) * 100 : 0);
@@ -291,7 +291,7 @@ function StatsBody({ stats, paused, toDo }: FileState) {
         }
       />
       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-        <StatusBadges stats={stats} paused={paused} toDo={toDo} />
+        <StatusBadges stats={stats} paused={paused} toDo={toDo} flags={flags} />
         <Text size="xs" c="dimmed">
           {t("Repertoires.Positions", { count: stats.total })}
         </Text>
@@ -310,10 +310,19 @@ function StatsBody({ stats, paused, toDo }: FileState) {
   );
 }
 
-function StatusBadges({ stats, paused, toDo, size }: FileState & { size?: "xs" | "sm" }) {
+/** Moves flagged to review in a repertoire or group, and what clicking them does. */
+type FlagsInfo = { count: number; onClick: () => void };
+
+function StatusBadges({
+  stats,
+  paused,
+  toDo,
+  size,
+  flags,
+}: FileState & { size?: "xs" | "sm"; flags?: FlagsInfo }) {
   const { t } = useTranslation();
   return (
-    <Group gap={6} wrap="nowrap">
+    <Group gap={6} wrap="wrap">
       {paused && (
         <Badge
           size={size}
@@ -339,6 +348,20 @@ function StatusBadges({ stats, paused, toDo, size }: FileState & { size?: "xs" |
           {t("Repertoires.UpToDate")}
         </Badge>
       )}
+      {flags && flags.count > 0 && (
+        <Tooltip label={t("Repertoires.Flags.Count", { count: flags.count })}>
+          <Badge
+            size={size}
+            color="red"
+            variant="light"
+            leftSection={<IconFlag size="0.7rem" />}
+            style={{ cursor: "pointer" }}
+            onClick={flags.onClick}
+          >
+            {t("Repertoires.Flags.Badge", { count: flags.count })}
+          </Badge>
+        </Tooltip>
+      )}
     </Group>
   );
 }
@@ -357,21 +380,6 @@ type FileActions = {
   onFlags: () => void;
 };
 
-/** Red flag with the number of moves to review (shown only when there are some). */
-function FlagsButton({ file, actions }: { file: RepertoireFile; actions: FileActions }) {
-  const { t } = useTranslation();
-  const count = actions.flagsOf(file);
-  if (!count) return null;
-  const label = t("Repertoires.Flags.Count", { count });
-  return (
-    <Tooltip label={label}>
-      <ActionIcon variant="light" color="red" aria-label={label} onClick={actions.onFlags}>
-        <IconFlag size="1rem" />
-      </ActionIcon>
-    </Tooltip>
-  );
-}
-
 /** Button of a section's ideas: lit when the section has some. */
 function IdeasButton({
   file,
@@ -387,7 +395,7 @@ function IdeasButton({
   return (
     <Tooltip label={label}>
       <ActionIcon
-        variant={count ? "light" : "subtle"}
+        variant="subtle"
         color={count ? "yellow" : "gray"}
         aria-label={label}
         onClick={() => actions.onIdeas(file)}
@@ -513,13 +521,12 @@ function RepertoireCard({
               <IconCloud size="1rem" style={{ color: "var(--mantine-color-dimmed)" }} />
             </Tooltip>
           )}
-          <FlagsButton file={file} actions={actions} />
           <IdeasButton file={file} count={info?.ideas ?? 0} actions={actions} />
           <FileMenu file={file} paused={paused} actions={actions} />
         </Group>
       </Group>
 
-      <StatsBody {...state} />
+      <StatsBody {...state} flags={{ count: actions.flagsOf(file), onClick: actions.onFlags }} />
 
       <Group mt="md" grow>
         <Button
@@ -615,10 +622,13 @@ function SectionRow({
             </Text>
           )}
         </Text>
-        <StatusBadges {...state} size="xs" />
+        <StatusBadges
+          {...state}
+          size="xs"
+          flags={{ count: actions.flagsOf(file), onClick: actions.onFlags }}
+        />
       </Stack>
       <Group gap={2} wrap="nowrap">
-        <FlagsButton file={file} actions={actions} />
         <IdeasButton file={file} count={ideas} actions={actions} />
         <Tooltip
           label={
@@ -769,7 +779,15 @@ function GroupCard({
         </Group>
       </Group>
 
-      <StatsBody stats={stats} paused={allPaused} toDo={toDo} />
+      <StatsBody
+        stats={stats}
+        paused={allPaused}
+        toDo={toDo}
+        flags={{
+          count: group.files.reduce((n, f) => n + fileActions.flagsOf(f), 0),
+          onClick: fileActions.onFlags,
+        }}
+      />
 
       <Group mt="md" grow>
         <Button

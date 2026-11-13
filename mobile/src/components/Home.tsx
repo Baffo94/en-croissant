@@ -5,6 +5,7 @@ import { scheduleSync, syncNow, useSyncStatus } from "../sync";
 import { ideaPoints } from "@/utils/ideas";
 import { getGameComment } from "../comments";
 import { useOpenFlagCount } from "../reviewFlags";
+import { Icon } from "./Icon";
 import { Header } from "./Practice";
 
 const PAUSE_SYNC_DELAY = 3_000;
@@ -79,7 +80,9 @@ function EntryItem({
         </span>
         <span className="item-stats">
           {entry.paused ? (
-            <span className="pill">⏸</span>
+            <span className="pill paused-pill" aria-label="In pausa">
+              <Icon name="pause" size={14} />
+            </span>
           ) : (
             <>
               {entry.stats.due > 0 && <span className="pill due">{entry.stats.due}</span>}
@@ -95,7 +98,7 @@ function EntryItem({
         aria-label={ideas ? `Idee della variante (${ideas})` : "Aggiungi le idee della variante"}
         onClick={() => onIdeas(entry)}
       >
-        💡
+        <Icon name="bulb" size={20} />
       </button>
     </li>
   );
@@ -131,7 +134,9 @@ function GroupItem({
         </span>
         <span className="item-stats">
           {group.paused ? (
-            <span className="pill">⏸</span>
+            <span className="pill paused-pill" aria-label="In pausa">
+              <Icon name="pause" size={14} />
+            </span>
           ) : (
             <>
               {group.stats.due > 0 && <span className="pill due">{group.stats.due}</span>}
@@ -171,7 +176,10 @@ function GroupItem({
                 scheduleSync(PAUSE_SYNC_DELAY);
               }}
             >
-              {group.paused ? "▶ Riattiva il gruppo" : "⏸ Pausa gruppo"}
+              <span className="with-icon">
+                <Icon name={group.paused ? "play" : "pause"} size={16} />
+                {group.paused ? "Riattiva il gruppo" : "Pausa gruppo"}
+              </span>
             </button>
           </div>
         </div>
@@ -266,15 +274,15 @@ export function Home({
           <>
             <button
               type="button"
-              className="icon"
+              className={`icon${status.state === "syncing" ? " spinning" : ""}`}
               aria-label="Sincronizza"
               disabled={status.state === "syncing"}
               onClick={() => void syncNow().catch(() => {})}
             >
-              ⟳
+              <Icon name="refresh" size={22} />
             </button>
             <button type="button" className="icon" aria-label="Impostazioni" onClick={onSettings}>
-              ⚙
+              <Icon name="settings" size={22} />
             </button>
           </>
         }
@@ -284,7 +292,8 @@ export function Home({
         <div className="empty">
           <p>Nessun repertorio.</p>
           <p className="small">
-            Sul PC metti i repertori nella cartella sincronizzata di En Croissant, poi tocca ⟳.
+            Sul PC metti i repertori nella cartella sincronizzata di En Croissant, poi tocca il
+            pulsante di sincronizzazione in alto.
           </p>
         </div>
       ) : (
@@ -303,8 +312,9 @@ export function Home({
           </div>
           {openFlags > 0 && (
             <p className="flag-summary">
-              🚩 {openFlags === 1 ? "1 mossa segnalata" : `${openFlags} mosse segnalate`} da
-              rivedere sul PC
+              <Icon name="flag" size={16} />{" "}
+              {openFlags === 1 ? "1 mossa segnalata" : `${openFlags} mosse segnalate`} da rivedere
+              sul PC
             </p>
           )}
           <ul className="list">{activeItems.map(renderItem)}</ul>
