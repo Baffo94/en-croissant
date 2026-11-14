@@ -198,7 +198,11 @@ export function syncDeck(
     const merged: Position[] = [];
     for (const pos of freshPositions) {
         const prev = existingByFen.get(pos.fen);
-        if (prev) {
+        if (prev && prev.answer && prev.answer !== pos.answer) {
+            // The move to play here changed: it is learnt again from the start.
+            merged.push(pos);
+            added++;
+        } else if (prev) {
             merged.push({ ...prev, answer: pos.answer });
         } else {
             merged.push(pos);

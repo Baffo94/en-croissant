@@ -3,7 +3,7 @@ import { makeSquare, type NormalMove } from "chessops";
 import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   formatReviewInterval,
   getNextReviewTimes,
@@ -25,6 +25,7 @@ import { Analysis } from "./Analysis";
 import { numbered } from "../moveLabel";
 import { Icon } from "./Icon";
 import { Ideas } from "./Ideas";
+import { RepertoireEditor } from "./RepertoireEditor";
 import { flagAt } from "@/utils/flags";
 import { flagProps } from "../reviewFlags";
 import { Board } from "./Board";
@@ -124,7 +125,8 @@ export function Practice({
   mixed?: boolean;
   onBack: () => void;
 }) {
-  const prepared = useMemo(() => {
+  /** PGN and deck of each source (read again after an edit of the repertoire). */
+  const prepare = () => {
     const result: Record<string, { source: PracticeSource; pgn: PgnGame }> = {};
     const decks: Record<string, PracticeData> = {};
     for (const source of sources) {
@@ -134,8 +136,8 @@ export function Practice({
       decks[keyOf(source)] = p.deck;
     }
     return { sources: result, decks };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
+  const [prepared, setPrepared] = useState(prepare);
   const [decks, setDecks] = useState<Record<string, PracticeData>>(prepared.decks);
   // Latest decks, also right after a rating (state updates are asynchronous).
   const decksRef = useRef(decks);
@@ -147,6 +149,8 @@ export function Practice({
   const [viewPly, setViewPly] = useState<number | null>(null);
   const [, setCommentVersion] = useState(0);
   const [showIdeas, setShowIdeas] = useState(false);
+  /** Line (SAN from the start) where the repertoire editor is open, null when closed. */
+  const [editing, setEditing] = useState<string[] | null>(null);
   const [analysis, setAnalysis] = useState<{
     moves: string[];
     comments: string[];
@@ -350,6 +354,49 @@ export function Practice({
     );
   }
 
+  if (editing) {
+    return (
+      <RepertoireEditor
+        rel={currentSource.source.rel}
+        game={currentSource.source.game}
+        title={`Modifica · ${currentSource.source.name}`}
+        initialLine={editing}
+        onDone={() => {
+          setEditing(null);
+          reloadAfterEdit();
+        }}
+      />
+    );
+  }
+
+  /**
+   * After the editor: PGN and decks read again (a position whose move changed is learnt
+   * again), and the review goes on from the same position if it still exists.
+   */
+  function reloadAfterEdit() {
+    const next = prepare();
+    setPrepared(next);
+    decksRef.current = next.decks;
+    setDecks(next.decks);
+    const exists = (item: Item) =>
+      next.decks[item.key]?.positions.some((p) => p.fen === item.fen) ?? false;
+    const rest = queue.filter(exists);
+    setPhase({ kind: "waiting" });
+    setViewPly(null);
+    setQueue(rest.length > 0 || mode === "all" ? rest : dueItems(next.decks));
+  }
+
+  function openEditor() {
+    if (!position) {
+      setEditing([]);
+      return;
+    }
+    const sans = nodes.slice(1).map((n) => n.san ?? "");
+    // While browsing: the move shown; otherwise the position being practised, where
+    // the repertoire's move (and its alternatives) can be changed.
+    setEditing(browsing ? sans.slice(0, viewPly!) : sans);
+  }
+
   if (showIdeas) {
     return (
       <Ideas
@@ -536,6 +583,14 @@ export function Practice({
             <button type="button" className="analyse" onClick={openAnalysis}>
               Analizza
             </button>
+            <button
+              type="button"
+              className="edit"
+              aria-label="Modifica il repertorio"
+              onClick={openEditor}
+            >
+              <Icon name="pencil" size={18} />
+            </button>
           </div>
         </>
       )}
@@ -568,6 +623,14 @@ export function Practice({
               ) : (
                 <button type="button" onClick={startAll}>
                   {mixed ? "Ripassa tutti i repertori" : "Ripassa tutto il repertorio"}
+                </button>
+              )}
+              {!mixed && (
+                <button type="button" onClick={openEditor}>
+                  <span className="with-icon">
+                    <Icon name="pencil" size={16} />
+                    Modifica il repertorio
+                  </span>
                 </button>
               )}
             </div>

@@ -32,6 +32,7 @@ import {
   IconCloudCheck,
   IconDots,
   IconFlag,
+  IconDeviceMobile,
   IconFolder,
   IconFolderOpen,
   IconFolderSymlink,
@@ -96,6 +97,7 @@ import { unwrap } from "@/utils/unwrap";
 import { CheckPanel, useOpenIssues } from "./CheckPanel";
 import { GamesPanel } from "./GamesPanel";
 import { FlagsPanel, useAllFlags } from "./FlagsPanel";
+import { PhoneEditsPanel, useNewPhoneEdits } from "./PhoneEditsPanel";
 import { IdeasModal } from "./IdeasModal";
 import { type CheckFile, checkRunAtom, startCheck } from "./checkRunner";
 import {
@@ -849,7 +851,7 @@ export default function RepertoiresPage() {
   const [ideasFor, setIdeasFor] = useState<RepertoireFile | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<GroupEntry | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<GroupEntry | null>(null);
-  const [view, setView] = useState<"list" | "check" | "games" | "flags">("list");
+  const [view, setView] = useState<"list" | "check" | "games" | "flags" | "phone">("list");
   const checkRun = useAtomValue(checkRunAtom);
   const issuesOf = useOpenIssues();
   /** "all" for Train all, a group key for a group, null when nothing is starting. */
@@ -952,6 +954,15 @@ export default function RepertoiresPage() {
     return counts;
   }, [allFlags]);
   const openFlagCount = Object.values(openFlagsOf).reduce((a, b) => a + b, 0);
+  const editFiles = useMemo(
+    () =>
+      (files ?? []).flatMap((f) => {
+        const rel = syncFolder ? relativePath(syncFolder, f.path) : null;
+        return rel ? [{ path: f.path, label: practiceLabel(f), rel }] : [];
+      }),
+    [files, syncFolder],
+  );
+  const [newPhoneEdits, markPhoneEditsSeen] = useNewPhoneEdits();
 
   const checkFiles: CheckFile[] = useMemo(
     () =>
@@ -1231,10 +1242,34 @@ export default function RepertoiresPage() {
           >
             {t("Repertoires.Tab.Flags")}
           </Tabs.Tab>
+          <Tabs.Tab
+            value="phone"
+            leftSection={<IconDeviceMobile size="1rem" />}
+            rightSection={
+              newPhoneEdits > 0 ? (
+                <Badge size="xs" color="blue" variant="filled">
+                  {newPhoneEdits}
+                </Badge>
+              ) : null
+            }
+          >
+            {t("Repertoires.Tab.Phone")}
+          </Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
-      {view === "flags" ? (
+      {view === "phone" ? (
+        <ScrollArea flex={1} px="lg" pb="lg">
+          <PhoneEditsPanel
+            files={editFiles}
+            onOpen={(path, game, line) => {
+              const file = files?.find((f) => f.path === path);
+              if (file) openRepertoire(file, false, { game, line });
+            }}
+            onSeen={markPhoneEditsSeen}
+          />
+        </ScrollArea>
+      ) : view === "flags" ? (
         <ScrollArea flex={1} px="lg" pb="lg">
           <FlagsPanel
             files={flagFiles}

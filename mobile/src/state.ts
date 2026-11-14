@@ -4,7 +4,9 @@
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { useSyncExternalStore } from "react";
 import type { PracticeData } from "@/components/files/opening";
+import type { EditHistory } from "@/utils/editHistory";
 import type { ReviewFlag } from "@/utils/flags";
+import type { RepertoireOp } from "@/utils/repertoireEdit";
 import type { TacticsPack } from "@/utils/training/tactics";
 import type { TrainingProgress } from "@/utils/training/trainingDocs";
 import type { PauseState } from "@/utils/sync/core";
@@ -20,6 +22,9 @@ export type Config = {
 };
 
 export type CommentEdit = { game: number; line: string[]; text: string };
+
+/** A repertoire edit made on the phone, waiting to be confirmed on GitHub. */
+export type PendingEdit = { game: number; op: RepertoireOp; id?: string };
 
 export type AppState = {
     version: 1;
@@ -37,6 +42,14 @@ export type AppState = {
      * a version changed meanwhile on the PC.
      */
     commentEdits?: Record<string, CommentEdit[]>;
+    /**
+     * relPgn -> repertoire edits made on the phone (moves, main line, comments,
+     * symbols) not yet confirmed on GitHub; applied again on top of a version changed
+     * meanwhile on the PC.
+     */
+    repertoireEdits?: Record<string, PendingEdit[]>;
+    /** History of the edits made on the phone (synced as training/edits.json). */
+    editHistory?: EditHistory;
     /** relPgn -> pause state (synced through the progress files). */
     pauses: Record<string, PauseState>;
     /** relPgn -> moves flagged to review (synced through the progress files). */

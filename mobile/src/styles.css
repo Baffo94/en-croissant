@@ -1252,3 +1252,189 @@ button.link-btn {
   padding-left: 0;
   padding-right: 0;
 }
+
+/* Repertoire editor (components/RepertoireEditor.tsx) */
+
+button.done-btn {
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.edit-path {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 8px 12px 2px;
+  scrollbar-width: none;
+}
+
+.edit-path::-webkit-scrollbar {
+  display: none;
+}
+
+.edit-path .move {
+  flex: none;
+}
+
+.edit-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+.edit-bar button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  font-size: 16px;
+}
+
+.edit-bar button.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.edit-panel {
+  padding-bottom: 72px;
+}
+
+.edit-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.edit-move {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.edit-comment {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 4px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.edit-label {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.chip.cont {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.chip.cont.main {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.chip.cont.has-note::after {
+  content: "•";
+  color: var(--accent);
+}
+
+.toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+}
+
+.toast button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sheet-actions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  text-align: left;
+  font-size: 15px;
+}
+
+.sheet-actions .sym {
+  width: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+button.danger {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.sheet-buttons button.danger.primary {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.chips.symbols .chip {
+  min-width: 52px;
+  font-weight: 700;
+}
+
+.tree-view {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tree-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 2px;
+  border-left: 1px solid var(--border);
+  margin-left: 2px;
+}
+
+.nav button.edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--accent);
+  color: var(--accent);
+}

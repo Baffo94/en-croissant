@@ -9,7 +9,9 @@ import { atom, getDefaultStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { deckAtomFamily, type PracticeData } from "@/state/atoms";
 import { getDocumentDir } from "@/utils/directories";
+import { desktopHistoryStore } from "@/state/editHistory";
 import { desktopTrainingStore } from "@/state/training";
+import { editHistoryDoc } from "@/utils/editHistory";
 import { getFlags, getPause, moveDecks, setFlags, setPauseState } from "@/utils/practiceDecks";
 import { trainingDocs } from "@/utils/training/syncDocs";
 import {
@@ -30,6 +32,9 @@ import {
     type SyncSummary,
 } from "./engine";
 import { GitHubClient, type FetchLike } from "./github";
+import { reloadTabs, tabsOfFiles } from "@/utils/reloadTabs";
+import { notifications } from "@mantine/notifications";
+import i18n from "i18next";
 
 // Logging must never break a sync (e.g. outside Tauri).
 const info = (msg: string) => void logInfo(msg).catch(() => {});
@@ -228,7 +233,10 @@ export function createTauriEnv(folder: string): SyncEnv {
         },
         getPause: (relPgn) => getPause(abs(relPgn)),
         getFlags: (relPgn) => getFlags(abs(relPgn)),
-        docs: () => trainingDocs(desktopTrainingStore, "pc"),
+        docs: () => [
+            ...trainingDocs(desktopTrainingStore, "pc"),
+            editHistoryDoc(desktopHistoryStore),
+        ],
         setFlags: (relPgn, flags) => setFlags(abs(relPgn), flags),
         setPause: (relPgn, state) => setPauseState(abs(relPgn), state),
         moveDecks(fromRel, toRel) {
@@ -282,6 +290,27 @@ async function doSync(): Promise<SyncSummary | null> {
             { onRetry: (n) => warn(`sync: repository changed during sync, retry ${n}`) },
         );
         saveManifest(result.manifest);
+        // Open tabs of the files that changed elsewhere show the new version (unless they
+        // have unsaved changes, kept as they are).
+        const changed = new Set(result.summary.downloadedFiles ?? []);
+        if (changed.size > 0) {
+            const tabs = tabsOfFiles((path) => {
+                const rel = relativePath(folder, path);
+                return rel !== null && changed.has(rel);
+            });
+            const skipped = await reloadTabs(tabs);
+            if (skipped.length > 0) {
+                warn(`sync: ${skipped.length} open tab(s) with unsaved changes not reloaded`);
+                notifications.show({
+                    color: "yellow",
+                    autoClose: false,
+                    title: i18n.t("Settings.Sync.StaleTabsTitle"),
+                    message: i18n.t("Settings.Sync.StaleTabs", {
+                        names: skipped.map((t) => t.name).join(", "),
+                    }),
+                });
+            }
+        }
         store.set(syncStatusAtom, {
             state: "success",
             lastSync: result.manifest.lastSync,

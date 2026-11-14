@@ -17,7 +17,8 @@ import { phoneTrainingStore } from "./training";
 import { emptyDeck, mergeDecks } from "@/utils/sync/core";
 import { GitHubClient } from "@/utils/sync/github";
 import { gitBlobSha } from "@/utils/sync/core";
-import { pendingFiles, settleEdits } from "./comments";
+import { editHistoryDoc } from "@/utils/editHistory";
+import { pendingFiles, phoneHistoryStore, settleEdits } from "./comments";
 import { decodeBase64, encodeBase64, getState, updateState, type Config } from "./state";
 
 export function parseRepository(value: string): { owner: string; repo: string } | null {
@@ -104,7 +105,7 @@ const memoryEnv: SyncEnv = {
         return getState().pauses?.[rel] ?? null;
     },
     docs() {
-        return trainingDocs(phoneTrainingStore, "phone");
+        return [...trainingDocs(phoneTrainingStore, "phone"), editHistoryDoc(phoneHistoryStore)];
     },
     getFlags(rel) {
         return structuredClone(getState().flags?.[rel] ?? []);
@@ -167,7 +168,7 @@ async function doSync(): Promise<SyncSummary | null> {
             retryConcurrent(() => {
                 const previous = getState().manifest;
                 const manifest = previous && previous.key === key ? previous : emptyManifest(key);
-                // Repertoires are read-only here, except files whose comments were edited.
+                // Repertoires are read-only here, except files edited on the phone.
                 const writable = pendingFiles();
                 return runSync(memoryEnv, client, manifest, {
                     deviceName: "Android",

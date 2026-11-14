@@ -84,6 +84,8 @@ export type SyncSummary = {
     /** Repertoires recognised as renamed or moved (progress follows them). */
     renamed: number;
     committed: boolean;
+    /** Content files replaced by the remote version (relative paths). */
+    downloadedFiles?: string[];
 };
 
 export class ConcurrentPushError extends Error {
@@ -206,6 +208,7 @@ export async function runSync(
         progressUpdated: 0,
         renamed: 0,
         committed: false,
+        downloadedFiles: [],
     };
 
     // 1. Remote state
@@ -301,6 +304,7 @@ export async function runSync(
                 await env.writeFile(rel, await blob(sha));
                 finalContent.set(rel, sha);
                 summary.downloaded++;
+                summary.downloadedFiles!.push(rel);
                 break;
             }
             case "deleteLocal":

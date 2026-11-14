@@ -7,18 +7,18 @@ import { INITIAL_FEN, makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import { positionFromFen } from "./chessops";
 
-type Token = {
+export type PgnToken = {
     kind: "header" | "comment" | "open" | "close" | "nag" | "number" | "result" | "san" | "other";
     start: number;
     end: number;
     text: string;
 };
 
-function tokenize(text: string): Token[] {
-    const tokens: Token[] = [];
+export function tokenize(text: string): PgnToken[] {
+    const tokens: PgnToken[] = [];
     let i = 0;
     let lineStart = true;
-    const push = (kind: Token["kind"], start: number, end: number) =>
+    const push = (kind: PgnToken["kind"], start: number, end: number) =>
         tokens.push({ kind, start, end, text: text.slice(start, end) });
     while (i < text.length) {
         const c = text[i];
@@ -68,7 +68,7 @@ function tokenize(text: string): Token[] {
             while (j < text.length && !/[\s{}();[\]]/.test(text[j])) j++;
             if (j === i) j = i + 1;
             const word = text.slice(i, j);
-            let kind: Token["kind"];
+            let kind: PgnToken["kind"];
             if (/^\$\d+$/.test(word)) kind = "nag";
             else if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(word)) kind = "result";
             else if (/^\d+\.*$/.test(word)) kind = "number";
@@ -92,7 +92,7 @@ function tokenize(text: string): Token[] {
  * Finds the move reached by `line` (SAN moves from the start of game `game`, as the
  * phone's parser writes them) and returns the token index of its SAN.
  */
-function locate(tokens: Token[], game: number, line: readonly string[]): number | null {
+function locate(tokens: PgnToken[], game: number, line: readonly string[]): number | null {
     const target = line.join(" ");
     let gameIndex = 0;
     let inMoves = false;
@@ -166,7 +166,7 @@ function locate(tokens: Token[], game: number, line: readonly string[]): number 
  * Token index where the movetext of game `game` starts (its first comment, move number,
  * move or result), or null when the game has no movetext.
  */
-function locateStart(tokens: Token[], game: number): number | null {
+function locateStart(tokens: PgnToken[], game: number): number | null {
     let gameIndex = 0;
     let inMoves = false;
     let depth = 0;
@@ -228,7 +228,7 @@ export function setMoveComment(
         while (first < tokens.length && tokens[first].kind === "nag") first++;
     }
     let k = first;
-    const comments: Token[] = [];
+    const comments: PgnToken[] = [];
     while (k < tokens.length && tokens[k].kind === "comment" && tokens[k].text.startsWith("{")) {
         comments.push(tokens[k]);
         k++;
