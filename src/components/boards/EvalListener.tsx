@@ -1,7 +1,7 @@
 import { parseUci } from "chessops";
 import { INITIAL_FEN, makeFen } from "chessops/fen";
 import equal from "fast-deep-equal";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
 import { startTransition, useContext, useEffect, useMemo, useRef } from "react";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
@@ -26,6 +26,7 @@ import {
   toBestMoves,
 } from "@/utils/evalCache";
 import { getBestMoves as chessdbGetBestMoves } from "@/utils/chessdb/api";
+import { deepEnough, depthProgress, evaluationSignature, keepDeeper } from "@/utils/engineFloor";
 import { positionFromFen, swapMove } from "@/utils/chessops";
 import {
   type Engine,
@@ -135,7 +136,9 @@ function EngineListener({
 
   const [, setProgress] = useAtom(engineProgressFamily({ engine: engine.id, tab: activeTab! }));
 
-  const [, setEngineVariation] = useAtom(engineMovesFamily({ engine: engine.id, tab: activeTab! }));
+  const jotai = useJotaiStore();
+  const movesAtom = engineMovesFamily({ engine: engine.id, tab: activeTab! });
+  const [, setEngineVariation] = useAtom(movesAtom);
   const cacheSettings = useAtomValue(evalCacheSettingsAtom);
   /**
    * Opening position being analysed, with the depth already known from the local
@@ -152,6 +155,16 @@ function EngineListener({
       tab: activeTab!,
     }),
   );
+  // Lines computed with other engine options (other than lines, threads and memory) are
+  // not comparable with the new ones: they are forgotten.
+  const signature = evaluationSignature(settings.settings);
+  const lastSignature = useRef(signature);
+  useEffect(() => {
+    if (lastSignature.current === signature) return;
+    lastSignature.current = signature;
+    setEngineVariation(new Map());
+  }, [signature, setEngineVariation]);
+
   useEffect(() => {
     if (!settings.enabled) return;
     const unlisten = events.bestMovesPayload.listen(({ payload }) => {
@@ -165,20 +178,34 @@ function EngineListener({
         !isGameOver
       ) {
         const key = `${searchingFen}:${searchingMoves.join(",")}`;
+        const shown = jotai.get(movesAtom).get(key);
+        if (ev.length === 0) {
+          // End of a search without any complete line (nothing new to show).
+          setProgress(Math.max(payload.progress, depthProgress(shown, settings.go)));
+          return;
+        }
         const known = stored.current?.key === key ? stored.current : null;
-        if (known && ev[0] && ev[0].depth <= known.depth) {
+        if (known && ev[0].depth <= known.depth) {
           // Still shallower than the stored evaluation, which stays on screen.
           setProgress(payload.progress);
           return;
         }
-        if (known && ev[0] && ev[0].depth >= MIN_STORED_DEPTH) {
+        if (known && ev[0].depth >= MIN_STORED_DEPTH) {
           known.depth = ev[0].depth;
           commands.evalCachePut(known.fen, fromBestMoves(ev, engine.name)).catch(() => {});
+        }
+        // Deeper lines already on screen (earlier search of this position) stay until
+        // the engine catches up with them.
+        const next = known ? ev : keepDeeper(shown, ev);
+        const progress = Math.max(payload.progress, depthProgress(next ?? shown, settings.go));
+        if (next === null) {
+          setProgress(progress);
+          return;
         }
         startTransition(() => {
           setEngineVariation((prev) => {
             const newMap = new Map(prev);
-            newMap.set(`${searchingFen}:${searchingMoves.join(",")}`, ev);
+            newMap.set(key, next);
             if (threat) {
               newMap.delete(`${fen}:${moves.join(",")}`);
             } else if (finalFen && !isCheck) {
@@ -186,11 +213,11 @@ function EngineListener({
             }
             return newMap;
           });
-          setProgress(payload.progress);
+          setProgress(progress);
           const shouldSetScore =
             firstEngineWithLines === engine.id || firstEngineWithLines === null;
           if (shouldSetScore) {
-            setScore(ev[0].score);
+            setScore(next[0].score);
           }
         });
       }
@@ -213,6 +240,9 @@ function EngineListener({
     fen,
     JSON.stringify(moves),
     finalFen,
+    jotai,
+    movesAtom,
+    settings.go,
   ]);
 
   const getBestMoves = useMemo(
@@ -242,8 +272,22 @@ function EngineListener({
               name: s.name,
               value: s.value?.toString() || "",
             })) ?? [];
-          // Opening position: show the stored evaluation at once while the engine starts.
           const key = `${searchingFen}:${searchingMoves.join(",")}`;
+          const multiPv = Number(settings.settings?.find((o) => o.name === "MultiPV")?.value ?? 1);
+          if (
+            deepEnough(
+              jotai.get(movesAtom).get(key),
+              settings.go,
+              wantedLines(searchingFen, searchingMoves, multiPv),
+            )
+          ) {
+            // Already analysed this deep (earlier in the session): nothing to compute.
+            stored.current = null;
+            if (engine.type === "local") stopEngine(engine, activeTab!);
+            setProgress(100);
+            return;
+          }
+          // Opening position: show the stored evaluation at once while the engine starts.
           const target = useCache ? fenAfter(searchingFen, searchingMoves) : null;
           stored.current = target && isOpeningFen(target) ? { key, fen: target, depth: 0 } : null;
           if (stored.current) {
@@ -271,13 +315,12 @@ function EngineListener({
             extraOptions: options,
           }).then((moves) => {
             if (moves) {
+              // The same search was already running (or done): its lines so far.
               const [progress, bestMoves] = moves;
-              setEngineVariation((prev) => {
-                const newMap = new Map(prev);
-                newMap.set(`${searchingFen}:${searchingMoves.join(",")}`, bestMoves);
-                return newMap;
-              });
-              setProgress(progress);
+              const shown = jotai.get(movesAtom).get(key);
+              const next = keepDeeper(shown, bestMoves);
+              if (next) setEngineVariation((prev) => new Map(prev).set(key, next));
+              setProgress(Math.max(progress, depthProgress(next ?? shown, settings.go)));
             }
           });
         }
@@ -299,9 +342,21 @@ function EngineListener({
       getBestMoves,
       setEngineVariation,
       engine,
+      jotai,
+      movesAtom,
     ],
   );
   return null;
+}
+
+/** Lines the engine can give for a position: MultiPV, or fewer with fewer legal moves. */
+function wantedLines(fen: string, moves: string[], multiPv: number): number {
+  const target = fenAfter(fen, moves);
+  const [pos] = target ? positionFromFen(target) : [null];
+  if (!pos) return multiPv;
+  let legal = 0;
+  for (const dests of pos.allDests().values()) legal += dests.size();
+  return Math.max(1, Math.min(multiPv, legal));
 }
 
 export default EvalListener;

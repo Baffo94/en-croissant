@@ -48,6 +48,9 @@ pub struct EngineProcess {
     options: EngineOptions,
     go_mode: GoMode,
     running: bool,
+    /// Searches stopped whose "bestmove" has not arrived yet: everything the engine
+    /// prints until then belongs to them, not to the current search.
+    stale: u32,
     real_multipv: u16,
     start: Instant,
 }
@@ -69,6 +72,7 @@ impl EngineProcess {
                 real_multipv: 0,
                 go_mode: GoMode::Infinite,
                 running: false,
+                stale: 0,
                 start: Instant::now(),
             },
             reader,
@@ -119,6 +123,7 @@ impl EngineProcess {
         self.options = options.clone();
         self.best_moves.clear();
         self.last_best_moves.clear();
+        self.last_progress = 0.0;
         Ok(())
     }
 
@@ -137,10 +142,25 @@ impl EngineProcess {
         Ok(())
     }
 
+    /// Stops the current search, if any. Its last lines and its "bestmove" are still to
+    /// come and are ignored: they must not be taken for the next search's.
     async fn stop(&mut self) -> Result<(), Error> {
-        self.base.stop().await?;
-        self.running = false;
+        if self.running {
+            self.base.stop().await?;
+            self.stale += 1;
+            self.running = false;
+        }
         Ok(())
+    }
+
+    /// The last search ended by itself (not stopped) with these options.
+    fn finished(&self, options: &EngineOptions, go_mode: &GoMode) -> bool {
+        !self.running
+            && self.stale == 0
+            && self.last_progress >= 100.0
+            && !self.last_best_moves.is_empty()
+            && &self.options == options
+            && &self.go_mode == go_mode
     }
 
     async fn kill(&mut self) -> Result<(), Error> {
@@ -152,12 +172,86 @@ impl EngineProcess {
     pub fn kill_sync(&mut self) {
         self.base.kill_sync();
     }
+
+    /// Takes in a line printed by the engine during a live analysis. The output of a
+    /// stopped search is ignored; complete depths of the current one are kept in
+    /// `last_best_moves`.
+    fn handle_line(&mut self, line: &str) -> Result<Option<EngineUpdate>, Error> {
+        // Checked on the text: "bestmove (none)" is not understood by the UCI parser.
+        if line.trim_start().starts_with("bestmove") {
+            if self.stale > 0 {
+                // End of a search that was stopped: its result is not wanted.
+                self.stale -= 1;
+                return Ok(None);
+            }
+            self.running = false;
+            self.last_progress = 100.0;
+            return Ok(Some(EngineUpdate::Finished));
+        }
+        if self.stale > 0 {
+            // Last lines of a stopped search, computed for another position or limit.
+            return Ok(None);
+        }
+        let UciMessage::Info(attrs) = parse_one(line) else {
+            return Ok(None);
+        };
+        let best_moves = match parse_uci_attrs(attrs, &self.options.fen.parse()?, &self.options.moves)
+        {
+            Ok(best_moves) => best_moves,
+            Err(Error::NoMovesFound) => return Ok(None),
+            Err(e) => {
+                warn!("Failed to parse info line: {}, error: {:?}", line, e);
+                return Ok(None);
+            }
+        };
+        if best_moves.score.lower_bound == Some(true) || best_moves.score.upper_bound == Some(true)
+        {
+            return Ok(None);
+        }
+        let multipv = best_moves.multipv;
+        let cur_depth = best_moves.depth;
+        let cur_nodes = best_moves.nodes;
+        if multipv as usize != self.best_moves.len() + 1 {
+            return Ok(None);
+        }
+        self.best_moves.push(best_moves);
+        if multipv != self.real_multipv {
+            return Ok(None);
+        }
+        let complete = self.best_moves.iter().all(|x| x.depth == cur_depth)
+            && cur_depth >= self.last_depth;
+        let lines = std::mem::take(&mut self.best_moves);
+        if !complete {
+            return Ok(None);
+        }
+        let progress = match self.go_mode {
+            GoMode::Depth(depth) => (cur_depth as f64 / depth as f64) * 100.0,
+            GoMode::Time(time) => (self.start.elapsed().as_millis() as f64 / time as f64) * 100.0,
+            GoMode::Nodes(nodes) => (cur_nodes / nodes as f64) * 100.0,
+            GoMode::PlayersTime(_) => 99.99,
+            GoMode::Infinite => 99.99,
+        };
+        self.last_depth = cur_depth;
+        self.last_best_moves = lines;
+        self.last_progress = progress.min(99.99) as f32;
+        Ok(Some(EngineUpdate::Lines(progress)))
+    }
+}
+
+/// What a line of the engine changes on screen.
+#[derive(Debug, PartialEq)]
+enum EngineUpdate {
+    /// A complete depth of the current search, with its progress.
+    Lines(f64),
+    /// The current search is over.
+    Finished,
 }
 
 #[derive(Clone, Serialize, Debug, Derivative, Type)]
 #[derivative(Default)]
 pub struct BestMoves {
-    nodes: u32,
+    /// f64: long searches go past the 4.3 billion nodes of a u32.
+    nodes: f64,
     depth: u32,
     score: Score,
     #[serde(rename = "uciMoves")]
@@ -218,7 +312,7 @@ fn parse_uci_attrs(
                 best_moves.nps = nps as u32;
             }
             UciInfoAttribute::Nodes(nodes) => {
-                best_moves.nodes = nodes as u32;
+                best_moves.nodes = nodes as f64;
             }
             UciInfoAttribute::Depth(depth) => {
                 best_moves.depth = depth;
@@ -344,25 +438,21 @@ pub async fn get_best_moves(
     }
 
     if state.engine_processes.contains_key(&key) {
+        let process = state.engine_processes.get_mut(&key).unwrap();
+        let mut process = process.lock().await;
+        // Same search still running, or already finished: nothing to start again.
+        if options == process.options
+            && go_mode == process.go_mode
+            && (process.running || process.finished(&options, &go_mode))
         {
-            let process = state.engine_processes.get_mut(&key).unwrap();
-            let mut process = process.lock().await;
-            if options == process.options && go_mode == process.go_mode && process.running {
-                return Ok(Some((
-                    process.last_progress,
-                    process.last_best_moves.clone(),
-                )));
-            }
-            process.stop().await?;
+            return Ok(Some((
+                process.last_progress,
+                process.last_best_moves.clone(),
+            )));
         }
-        // give time for engine to stop and process previous lines
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        {
-            let process = state.engine_processes.get_mut(&key).unwrap();
-            let mut process = process.lock().await;
-            process.set_options(options.clone()).await?;
-            process.go(&go_mode).await?;
-        }
+        process.stop().await?;
+        process.set_options(options.clone()).await?;
+        process.go(&go_mode).await?;
         return Ok(None);
     }
 
@@ -378,79 +468,23 @@ pub async fn get_best_moves(
 
     while let Some(line) = reader.next_line().await? {
         let mut proc = process.lock().await;
-        match parse_one(&line) {
-            UciMessage::Info(attrs) => {
-                match parse_uci_attrs(attrs, &proc.options.fen.parse()?, &proc.options.moves) {
-                    Ok(best_moves) => {
-                        if best_moves.score.lower_bound == Some(true)
-                            || best_moves.score.upper_bound == Some(true)
-                        {
-                            continue;
-                        }
-                        let multipv = best_moves.multipv;
-                        let cur_depth = best_moves.depth;
-                        let cur_nodes = best_moves.nodes;
-                        if multipv as usize == proc.best_moves.len() + 1 {
-                            proc.best_moves.push(best_moves);
-                            if multipv == proc.real_multipv {
-                                if proc.best_moves.iter().all(|x| x.depth == cur_depth)
-                                    && cur_depth >= proc.last_depth
-                                    && lim.check().is_ok()
-                                {
-                                    let progress = match proc.go_mode {
-                                        GoMode::Depth(depth) => {
-                                            (cur_depth as f64 / depth as f64) * 100.0
-                                        }
-                                        GoMode::Time(time) => {
-                                            (proc.start.elapsed().as_millis() as f64 / time as f64)
-                                                * 100.0
-                                        }
-                                        GoMode::Nodes(nodes) => {
-                                            (cur_nodes as f64 / nodes as f64) * 100.0
-                                        }
-                                        GoMode::PlayersTime(_) => 99.99,
-                                        GoMode::Infinite => 99.99,
-                                    };
-                                    BestMovesPayload {
-                                        best_lines: proc.best_moves.clone(),
-                                        engine: id.clone(),
-                                        tab: tab.clone(),
-                                        fen: proc.options.fen.clone(),
-                                        moves: proc.options.moves.clone(),
-                                        progress,
-                                    }
-                                    .emit(&app)?;
-                                    proc.last_depth = cur_depth;
-                                    proc.last_best_moves = proc.best_moves.clone();
-                                    proc.last_progress = progress as f32;
-                                }
-                                proc.best_moves.clear();
-                            }
-                        }
-                    }
-                    Err(e) => match e {
-                        Error::NoMovesFound => {}
-                        _ => {
-                            warn!("Failed to parse info line: {}, error: {:?}", line, e);
-                        }
-                    },
-                }
-            }
-            UciMessage::BestMove { .. } => {
-                BestMovesPayload {
-                    best_lines: proc.last_best_moves.clone(),
-                    engine: id.clone(),
-                    tab: tab.clone(),
-                    fen: proc.options.fen.clone(),
-                    moves: proc.options.moves.clone(),
-                    progress: 100.0,
-                }
-                .emit(&app)?;
-                proc.last_progress = 100.0;
-            }
-            _ => {}
-        }
         proc.base.log_engine(&line);
+        let progress = match proc.handle_line(&line)? {
+            Some(EngineUpdate::Finished) => 100.0,
+            // The state is always kept (the final "bestmove" sends it); only the updates
+            // to the screen are throttled.
+            Some(EngineUpdate::Lines(progress)) if lim.check().is_ok() => progress,
+            _ => continue,
+        };
+        BestMovesPayload {
+            best_lines: proc.last_best_moves.clone(),
+            engine: id.clone(),
+            tab: tab.clone(),
+            fen: proc.options.fen.clone(),
+            moves: proc.options.moves.clone(),
+            progress,
+        }
+        .emit(&app)?;
     }
     info!("Engine process finished: tab: {}, engine: {}", tab, engine);
     state.engine_processes.remove(&key);
@@ -489,7 +523,7 @@ impl BestMoves {
             (None, None) => ScoreValue::Cp(0),
         };
         BestMoves {
-            nodes: 0,
+            nodes: 0.0,
             depth: line.depth,
             score: Score {
                 value,
@@ -628,6 +662,11 @@ async fn analyse_report_position(
             Ok(Ok(None)) | Ok(Err(_)) => return Ok(PositionOutcome::Unresponsive),
         };
         last_output = Instant::now();
+        // Checked on the text: "bestmove (none)" is not understood by the UCI parser.
+        if line.trim_start().starts_with("bestmove") {
+            proc.running = false;
+            return Ok(PositionOutcome::Done(current_analysis));
+        }
         match parse_one(&line) {
             UciMessage::Info(attrs) => {
                 if let Ok(best_moves) = parse_uci_attrs(attrs, &proc.options.fen.parse()?, moves)
@@ -648,7 +687,6 @@ async fn analyse_report_position(
                     }
                 }
             }
-            UciMessage::BestMove { .. } => return Ok(PositionOutcome::Done(current_analysis)),
             _ => {}
         }
     }
@@ -1004,6 +1042,80 @@ mod tests {
     #[test]
     fn eval_start_pos() {
         assert_eq!(naive_eval(&Chess::default()), 0);
+    }
+
+    /// Live analysis with a real Stockfish (skipped when it is not installed): what a
+    /// stopped search still prints never reaches the next one.
+    #[tokio::test]
+    async fn stopped_search_output_is_ignored() {
+        let path = PathBuf::from("/usr/games/stockfish");
+        if !path.exists() {
+            return;
+        }
+        let options = |fen: &str| EngineOptions {
+            fen: fen.to_string(),
+            moves: vec![],
+            extra_options: vec![EngineOption {
+                name: "MultiPV".to_string(),
+                value: "2".to_string(),
+            }],
+        };
+        let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let queen = "8/8/8/4k3/8/8/8/3QK3 w - - 0 1";
+        let run = async {
+            let (mut proc, mut reader) = EngineProcess::new(path).await.unwrap();
+            proc.set_options(options(start)).await.unwrap();
+            proc.go(&GoMode::Depth(40)).await.unwrap();
+            // A few depths of the first search, then it is stopped and another starts.
+            while proc.last_depth < 6 {
+                let line = reader.next_line().await.unwrap().unwrap();
+                proc.handle_line(&line).unwrap();
+            }
+            proc.stop().await.unwrap();
+            assert_eq!(proc.stale, 1);
+            proc.set_options(options(queen)).await.unwrap();
+            proc.go(&GoMode::Depth(8)).await.unwrap();
+            let mut depths = vec![];
+            loop {
+                let line = reader.next_line().await.unwrap().unwrap();
+                match proc.handle_line(&line).unwrap() {
+                    Some(EngineUpdate::Lines(_)) => {
+                        // Only lines of the queen ending (moves of the queen or the king).
+                        for l in &proc.last_best_moves {
+                            let first = &l.uci_moves[0];
+                            assert!(first.starts_with("d1") || first.starts_with("e1"), "{first}");
+                        }
+                        depths.push(proc.last_depth);
+                    }
+                    Some(EngineUpdate::Finished) => break,
+                    None => {}
+                }
+            }
+            assert_eq!(proc.stale, 0);
+            assert!(!proc.running);
+            assert_eq!(proc.last_depth, 8);
+            assert_eq!(*depths.last().unwrap(), 8);
+            assert_eq!(proc.last_best_moves.len(), 2);
+            // Finished by itself: the same request needs no new search.
+            assert!(proc.finished(&options(queen), &GoMode::Depth(8)));
+            assert!(!proc.finished(&options(queen), &GoMode::Depth(9)));
+            // Stopping a finished search sends nothing and expects nothing.
+            proc.stop().await.unwrap();
+            assert_eq!(proc.stale, 0);
+            proc.kill().await.unwrap();
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(60), run)
+            .await
+            .expect("the engine did not answer in time");
+    }
+
+    #[test]
+    fn bestmove_none_is_the_end_of_a_search() {
+        // A position without legal moves: "bestmove (none)", not parsed as a UCI message.
+        assert!(!matches!(
+            parse_one("bestmove (none)"),
+            UciMessage::BestMove { .. }
+        ));
     }
 
     #[test]

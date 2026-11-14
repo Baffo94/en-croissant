@@ -4,6 +4,7 @@ import i18n from "i18next";
 import { createRoot } from "react-dom/client";
 import { initReactI18next } from "react-i18next";
 import App from "./App";
+import { applyDateLocale } from "./utils/dateLocale";
 
 import be_BY from "./translation/be-BY.json";
 import de_DE from "./translation/de-DE.json";
@@ -57,6 +58,8 @@ i18n
   });
 
 dayjs.extend(customParseFormat);
+applyDateLocale(i18n.language);
+i18n.on("languageChanged", applyDateLocale);
 
 setAutoFreeze(false);
 

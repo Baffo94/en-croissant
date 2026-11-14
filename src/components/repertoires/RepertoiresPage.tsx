@@ -47,8 +47,7 @@ import { useLoaderData, useNavigate } from "@tanstack/react-router";
 import { exists, mkdir, readDir, remove } from "@tauri-apps/plugin-fs";
 import { openPath } from "@tauri-apps/plugin-opener";
 import dayjs from "dayjs";
-import "dayjs/locale/it";
-import relativeTime from "dayjs/plugin/relativeTime";
+import { dayjsLocale } from "@/utils/dateLocale";
 import { atom, useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -115,8 +114,6 @@ import {
   type Listed,
   sumStats,
 } from "./groups";
-
-dayjs.extend(relativeTime);
 
 /** Sync shortly after pausing/resuming, so the phone sees it. */
 const PAUSE_SYNC_DELAY = 5_000;
@@ -239,10 +236,7 @@ function fileState(file: RepertoireFile, info: Info | undefined): FileState {
 
 function useFromNow() {
   const { i18n } = useTranslation();
-  return (date: Date) =>
-    dayjs(date)
-      .locale(i18n.language?.slice(0, 2) === "it" ? "it" : "en")
-      .fromNow();
+  return (date: Date) => dayjs(date).locale(dayjsLocale(i18n.language)).fromNow();
 }
 
 function ColorDot({ orientation, size = 18 }: { orientation?: "white" | "black"; size?: number }) {

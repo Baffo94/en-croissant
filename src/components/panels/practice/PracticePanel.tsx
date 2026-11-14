@@ -30,6 +30,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import dayjs from "dayjs";
+import { formatShortDateTime } from "@/utils/dateLocale";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -77,7 +78,7 @@ import RepertoireInfo from "./RepertoireInfo";
 const PRACTICE_SYNC_DELAY = 30_000;
 
 function PracticePanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -675,7 +676,7 @@ function PracticePanel() {
                           </Text>
                           <Text ta="center" fz="sm" c="dimmed">
                             {t("Board.Practice.PracticedAll2")}{" "}
-                            {dayjs(stats.nextDue).format("MMM D, HH:mm")}
+                            {stats.nextDue ? formatShortDateTime(stats.nextDue, i18n.language) : ""}
                           </Text>
                         </Stack>
                       </Paper>
