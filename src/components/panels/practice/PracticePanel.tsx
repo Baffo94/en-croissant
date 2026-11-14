@@ -45,6 +45,7 @@ import {
   formatReviewInterval,
   getCardForReview,
   getNextReviewTimes,
+  reviewClock,
   getStats,
   syncDeck,
   updateCardPerformance,
@@ -871,7 +872,8 @@ function QualityRatingPanel({
   timeTaken?: number;
 }) {
   const { t } = useTranslation();
-  const reviewTimes = card ? getNextReviewTimes(card) : null;
+  const clock = reviewClock();
+  const reviewTimes = card ? getNextReviewTimes(card, clock) : null;
 
   return (
     <Paper p="sm" withBorder>
@@ -906,7 +908,7 @@ function QualityRatingPanel({
                   {t("Board.Practice.Again")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[1]) : ""}
+                  {reviewTimes ? formatReviewInterval(reviewTimes[1], clock) : ""}
                 </Text>
               </Stack>
             </Button>
@@ -924,7 +926,7 @@ function QualityRatingPanel({
                   {t("Board.Practice.Hard")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[2]) : ""}
+                  {reviewTimes ? formatReviewInterval(reviewTimes[2], clock) : ""}
                 </Text>
               </Stack>
             </Button>
@@ -942,7 +944,7 @@ function QualityRatingPanel({
                   {t("Board.Practice.Good")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[3]) : ""}
+                  {reviewTimes ? formatReviewInterval(reviewTimes[3], clock) : ""}
                 </Text>
               </Stack>
             </Button>
@@ -960,7 +962,7 @@ function QualityRatingPanel({
                   {t("Board.Practice.Easy")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[4]) : ""}
+                  {reviewTimes ? formatReviewInterval(reviewTimes[4], clock) : ""}
                 </Text>
               </Stack>
             </Button>

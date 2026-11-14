@@ -151,13 +151,23 @@ export function getCardForReview(
     return ahead[0] ?? null;
 }
 
+/**
+ * The time used for a review, to the minute. ts-fsrs draws its random spread ("fuzz")
+ * from the review time: with the exact milliseconds, every refresh of the buttons drew
+ * another interval, and the one applied was yet another. To the minute, what the buttons
+ * show is what the grade applies.
+ */
+export function reviewClock(at: Date = new Date()): Date {
+    return new Date(Math.floor(at.getTime() / 60000) * 60000);
+}
+
 export function updateCardPerformance(
     setPositions: React.Dispatch<SetStateAction<PracticeData>>,
     i: number,
     card: Card,
     grade: 1 | 2 | 3 | 4,
 ) {
-    const schedulingCards = f.repeat(card, new Date());
+    const schedulingCards = f.repeat(card, reviewClock());
 
     const { card: newCard, log } = schedulingCards[grade];
 
@@ -202,8 +212,8 @@ export function syncDeck(
     return { positions: merged, added, removed };
 }
 
-export function getNextReviewTimes(card: Card): Record<Grade, Date> {
-    const schedulingCards = f.repeat(card, new Date());
+export function getNextReviewTimes(card: Card, now: Date = reviewClock()): Record<Grade, Date> {
+    const schedulingCards = f.repeat(card, now);
     return {
         1: schedulingCards[1].card.due,
         2: schedulingCards[2].card.due,
@@ -212,8 +222,7 @@ export function getNextReviewTimes(card: Card): Record<Grade, Date> {
     };
 }
 
-export function formatReviewInterval(dueDate: Date): string {
-    const now = new Date();
+export function formatReviewInterval(dueDate: Date, now: Date = reviewClock()): string {
     const diffMs = dueDate.getTime() - now.getTime();
     const diffMin = Math.round(diffMs / 60000);
     const diffHrs = Math.round(diffMs / 3600000);
