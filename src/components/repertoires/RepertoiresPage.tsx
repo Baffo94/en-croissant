@@ -681,7 +681,15 @@ function GroupCard({
   // A paused group shows the progress of all its sections; otherwise only the active ones count.
   const stats = sumStats((allPaused ? sectionStates : active).map((s) => s.stats));
   const toDo = active.reduce((n, s) => n + s.toDo, 0);
-  const orientation = infos?.[group.files[0].path]?.orientation;
+  // The group's colour is its sections' (the most common one, if they differ).
+  const colors = group.files.map((f) => infos?.[f.path]?.orientation);
+  const blacks = colors.filter((c) => c === "black").length;
+  const orientation = colors.every((c) => !c)
+    ? undefined
+    : blacks * 2 > colors.filter(Boolean).length
+      ? "black"
+      : "white";
+  const misplaced = group.files.filter((_, i) => colors[i] && colors[i] !== orientation);
   const synced = group.files.some((f) => f.inSyncFolder);
 
   return (
@@ -707,6 +715,16 @@ function GroupCard({
                 {orientation === "black" ? t("Common.BLACK") : t("Common.WHITE")}
                 {` · ${t("Repertoires.Sections", { count: group.files.length })}`}
               </Text>
+              {misplaced.length > 0 && (
+                <Text size="xs" c="orange">
+                  {t("Repertoires.MixedColors", {
+                    color: t(
+                      orientation === "black" ? "Common.WHITE" : "Common.BLACK",
+                    ).toLowerCase(),
+                    names: misplaced.map((f) => f.name).join(", "),
+                  })}
+                </Text>
+              )}
             </div>
           </Group>
         </UnstyledButton>
@@ -1411,6 +1429,7 @@ export default function RepertoiresPage() {
       <SplitModal
         file={splitting}
         orientation={splitting ? orientationOf(splitting) : "white"}
+        groups={groups}
         onClose={() => setSplitting(null)}
         onDone={() => {
           setSplitting(null);

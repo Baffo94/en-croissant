@@ -90,6 +90,18 @@ export function MoveToGroupModal({
       const name = safeFileName(groupName);
       if (!name) return setError(t("Common.RequireName"));
       dir = joinPath(file.base, name);
+      // A new group must not land in an existing one (of the other colour, too).
+      const taken = groups.find((g) => g.dir.toLowerCase() === dir.toLowerCase());
+      if (taken || (await exists(dir)))
+        return setError(
+          taken && taken.orientation !== orientation
+            ? t("Repertoires.GroupExistsOtherColor", {
+                color: t(
+                  taken.orientation === "white" ? "Common.WHITE" : "Common.BLACK",
+                ).toLowerCase(),
+              })
+            : t("Repertoires.GroupExists"),
+        );
     } else dir = choice;
     const target = joinPath(dir, `${section}.pgn`);
     if (target === file.path) return onClose();
@@ -183,11 +195,13 @@ function withOrientation(pgn: string, orientation: "white" | "black"): string {
 export function SplitModal({
   file,
   orientation,
+  groups,
   onClose,
   onDone,
 }: {
   file: (SectionFile & { numGames: number }) | null;
   orientation: "white" | "black";
+  groups: GroupChoice[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -223,6 +237,18 @@ export function SplitModal({
     if (cleaned.some((n) => !n)) return setError(t("Common.RequireName"));
     if (new Set(cleaned.map((n) => n.toLowerCase())).size !== cleaned.length)
       return setError(t("Repertoires.DuplicateNames"));
+    // The new group named after the file must not be a group of the other colour.
+    const other = file.group
+      ? undefined
+      : groups.find(
+          (g) => g.dir.toLowerCase() === dir.toLowerCase() && g.orientation !== orientation,
+        );
+    if (other)
+      return setError(
+        t("Repertoires.GroupExistsOtherColor", {
+          color: t(other.orientation === "white" ? "Common.WHITE" : "Common.BLACK").toLowerCase(),
+        }),
+      );
     setBusy(true);
     try {
       for (const name of cleaned) {
