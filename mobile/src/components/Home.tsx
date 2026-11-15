@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { type GroupEntry, homeItems, listRepertoires, type RepertoireEntry } from "../repertoires";
+import {
+  COLOR_PART_LABEL,
+  colorParts,
+  type GroupEntry,
+  homeItems,
+  listRepertoires,
+  type RepertoireEntry,
+} from "../repertoires";
 import { setRepertoirePaused, useAppState } from "../state";
 import { scheduleSync, syncNow, useSyncStatus } from "../sync";
 import { ideaPoints } from "@/utils/ideas";
@@ -121,9 +128,25 @@ function GroupItem({
   expanded: boolean;
   onToggle: () => void;
   onOpen: (entry: RepertoireEntry) => void;
-  onTrain: (group: GroupEntry) => void;
+  onTrain: (name: string, entries: RepertoireEntry[]) => void;
 } & IdeasProps) {
   const toDo = group.stats.due + group.stats.unseen;
+  const parts = colorParts(group);
+  const mixed = parts.length > 1;
+  const sectionList = (sections: RepertoireEntry[]) => (
+    <ul className="list sections">
+      {sections.map((e) => (
+        <EntryItem
+          key={`${e.rel}#${e.game}`}
+          entry={e}
+          onOpen={onOpen}
+          section
+          ideasOf={ideasOf}
+          onIdeas={onIdeas}
+        />
+      ))}
+    </ul>
+  );
   return (
     <li className={`group${expanded ? " open" : ""}`}>
       <button type="button" className="item group-head" onClick={onToggle}>
@@ -133,6 +156,7 @@ function GroupItem({
             <span className="chevron">{expanded ? "▾" : "▸"}</span> {group.name}
           </span>
           <span className="item-folder">
+            {mixed && "Bianco e Nero · "}
             {group.sections.length === 1 ? "1 sezione" : `${group.sections.length} sezioni`}
           </span>
         </span>
@@ -152,24 +176,46 @@ function GroupItem({
       </button>
       {expanded && (
         <div className="group-body">
-          <ul className="list sections">
-            {group.sections.map((e) => (
-              <EntryItem
-                key={`${e.rel}#${e.game}`}
-                entry={e}
-                onOpen={onOpen}
-                section
-                ideasOf={ideasOf}
-                onIdeas={onIdeas}
-              />
-            ))}
-          </ul>
+          {mixed
+            ? parts.map((part) => (
+                <div key={part.color} className="color-part">
+                  <p className="color-part-title">
+                    <span className={`color-dot ${part.color}`} />
+                    {COLOR_PART_LABEL[part.color]}
+                  </p>
+                  {sectionList(part.sections)}
+                </div>
+              ))
+            : sectionList(group.sections)}
           <div className="group-actions">
-            {toDo > 0 && (
-              <button type="button" className="primary" onClick={() => onTrain(group)}>
-                Allena il gruppo ({toDo})
-              </button>
-            )}
+            {mixed
+              ? parts.map(
+                  (part) =>
+                    part.toDo > 0 && (
+                      <button
+                        key={part.color}
+                        type="button"
+                        className="primary"
+                        onClick={() =>
+                          onTrain(
+                            `${group.name} · ${part.color === "white" ? "Bianco" : "Nero"}`,
+                            part.active,
+                          )
+                        }
+                      >
+                        Allena {part.color === "white" ? "il Bianco" : "il Nero"} ({part.toDo})
+                      </button>
+                    ),
+                )
+              : toDo > 0 && (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => onTrain(group.name, group.active)}
+                  >
+                    Allena il gruppo ({toDo})
+                  </button>
+                )}
             <button
               type="button"
               onClick={() => {
@@ -338,7 +384,7 @@ export function Home({
         expanded={expanded.has(item.group.folder)}
         onToggle={() => toggle(item.group.folder)}
         onOpen={onOpen}
-        onTrain={(g) => onTrainGroup(g.name, g.active)}
+        onTrain={onTrainGroup}
         ideasOf={ideasOf}
         onIdeas={onIdeas}
       />

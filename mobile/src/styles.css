@@ -180,6 +180,20 @@ button.icon {
   background: #212529;
 }
 
+.color-dot.mixed {
+  background: linear-gradient(90deg, #f1f3f5 50%, #212529 50%);
+}
+
+.color-part-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
 .pill {
   display: inline-block;
   font-size: 12px;

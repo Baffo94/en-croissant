@@ -2,7 +2,7 @@ import { Button, Modal, SegmentedControl, Stack, Text, TextInput } from "@mantin
 import { useLoaderData, useNavigate } from "@tanstack/react-router";
 import { INITIAL_FEN } from "chessops/fen";
 import { useAtom, useSetAtom, useStore } from "jotai";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { activeTabAtom, addRecentFileAtom, tabFamily, tabsAtom } from "@/state/atoms";
 import { headersToPGN } from "@/utils/chess";
@@ -15,6 +15,7 @@ export default function CreateRepertoireModal({
   dir,
   onCreated,
   fixedColor,
+  defaultColor,
   title,
 }: {
   opened: boolean;
@@ -24,11 +25,16 @@ export default function CreateRepertoireModal({
   onCreated?: () => void;
   /** Colour imposed by the caller (sections of a group share the group's colour). */
   fixedColor?: "white" | "black";
+  /** Colour chosen at first (still changeable). */
+  defaultColor?: "white" | "black";
   title?: string;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
-  const [color, setColor] = useState<"white" | "black">("white");
+  const [color, setColor] = useState<"white" | "black">(defaultColor ?? "white");
+  useEffect(() => {
+    if (opened) setColor(defaultColor ?? "white");
+  }, [opened, defaultColor]);
   const [error, setError] = useState("");
   const loaderData = useLoaderData({ strict: false }) as { documentDir?: string } | undefined;
   const documentDir = dir ?? loaderData?.documentDir ?? "";

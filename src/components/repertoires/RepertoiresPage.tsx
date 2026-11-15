@@ -241,7 +241,13 @@ function useFromNow() {
   return (date: Date) => dayjs(date).locale(dayjsLocale(i18n.language)).fromNow();
 }
 
-function ColorDot({ orientation, size = 18 }: { orientation?: "white" | "black"; size?: number }) {
+function ColorDot({
+  orientation,
+  size = 18,
+}: {
+  orientation?: "white" | "black" | "mixed";
+  size?: number;
+}) {
   return (
     <Box
       w={size}
@@ -250,7 +256,12 @@ function ColorDot({ orientation, size = 18 }: { orientation?: "white" | "black";
         flexShrink: 0,
         borderRadius: "50%",
         border: "2px solid var(--mantine-color-gray-5)",
-        background: orientation === "black" ? "#000" : "#fff",
+        background:
+          orientation === "mixed"
+            ? "linear-gradient(90deg, #fff 50%, #000 50%)"
+            : orientation === "black"
+              ? "#000"
+              : "#fff",
       }}
     />
   );
@@ -547,9 +558,11 @@ function RepertoireCard({
 type GroupEntry = Extract<Listed<RepertoireFile>, { kind: "group" }>;
 
 type GroupActions = {
-  onTrain: (group: GroupEntry) => void;
+  /** Practice the group, or only its sections of one colour. */
+  onTrain: (group: GroupEntry, color?: "white" | "black") => void;
   onTogglePause: (group: GroupEntry, paused: boolean) => void;
-  onAddSection: (group: GroupEntry, orientation: "white" | "black") => void;
+  /** `fixed`: the colour of the new section is imposed (a colour's block). */
+  onAddSection: (group: GroupEntry, orientation: "white" | "black", fixed: boolean) => void;
   onRename: (group: GroupEntry) => void;
   onDelete: (group: GroupEntry) => void;
   onCheck: (group: GroupEntry) => void;
@@ -671,7 +684,8 @@ function GroupCard({
   states: Record<string, FileState>;
   fileActions: FileActions;
   actions: GroupActions;
-  training: boolean;
+  /** Key of the practice being started (the group, or the group and a colour). */
+  training: string | null;
 }) {
   const { t } = useTranslation();
   const [expanded, toggle] = useExpanded(group.key);
@@ -681,15 +695,19 @@ function GroupCard({
   // A paused group shows the progress of all its sections; otherwise only the active ones count.
   const stats = sumStats((allPaused ? sectionStates : active).map((s) => s.stats));
   const toDo = active.reduce((n, s) => n + s.toDo, 0);
-  // The group's colour is its sections' (the most common one, if they differ).
-  const colors = group.files.map((f) => infos?.[f.path]?.orientation);
-  const blacks = colors.filter((c) => c === "black").length;
-  const orientation = colors.every((c) => !c)
-    ? undefined
-    : blacks * 2 > colors.filter(Boolean).length
-      ? "black"
-      : "white";
-  const misplaced = group.files.filter((_, i) => colors[i] && colors[i] !== orientation);
+  // Sections by colour: a group may hold both, always shown and practised apart.
+  const parts = (["black", "white"] as const).flatMap((color) => {
+    const files = group.files.filter((f) => (infos?.[f.path]?.orientation ?? "white") === color);
+    if (files.length === 0) return [];
+    const partToDo = files.reduce(
+      (n, f) => n + (states[f.path] && !states[f.path].paused ? states[f.path].toDo : 0),
+      0,
+    );
+    return [{ color, files, toDo: partToDo }];
+  });
+  const mixed = parts.length > 1;
+  const orientation = mixed ? "mixed" : parts[0]?.color;
+  const colorName = (c: "white" | "black") => t(c === "white" ? "Common.WHITE" : "Common.BLACK");
   const synced = group.files.some((f) => f.inSyncFolder);
 
   return (
@@ -712,19 +730,9 @@ function GroupCard({
                 </Text>
               </Group>
               <Text size="xs" c="dimmed" truncate>
-                {orientation === "black" ? t("Common.BLACK") : t("Common.WHITE")}
+                {mixed ? t("Repertoires.BothColors") : colorName(parts[0]?.color ?? "white")}
                 {` · ${t("Repertoires.Sections", { count: group.files.length })}`}
               </Text>
-              {misplaced.length > 0 && (
-                <Text size="xs" c="orange">
-                  {t("Repertoires.MixedColors", {
-                    color: t(
-                      orientation === "black" ? "Common.WHITE" : "Common.BLACK",
-                    ).toLowerCase(),
-                    names: misplaced.map((f) => f.name).join(", "),
-                  })}
-                </Text>
-              )}
             </div>
           </Group>
         </UnstyledButton>
@@ -741,13 +749,26 @@ function GroupCard({
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconTarget size="1rem" />}
-                disabled={toDo === 0}
-                onClick={() => actions.onTrain(group)}
-              >
-                {t("Repertoires.TrainGroup")}
-              </Menu.Item>
+              {mixed ? (
+                parts.map((part) => (
+                  <Menu.Item
+                    key={part.color}
+                    leftSection={<IconTarget size="1rem" />}
+                    disabled={part.toDo === 0}
+                    onClick={() => actions.onTrain(group, part.color)}
+                  >
+                    {t("Repertoires.TrainColor", { color: colorName(part.color).toLowerCase() })}
+                  </Menu.Item>
+                ))
+              ) : (
+                <Menu.Item
+                  leftSection={<IconTarget size="1rem" />}
+                  disabled={toDo === 0}
+                  onClick={() => actions.onTrain(group)}
+                >
+                  {t("Repertoires.TrainGroup")}
+                </Menu.Item>
+              )}
               <Menu.Item
                 leftSection={
                   allPaused ? <IconPlayerPlay size="1rem" /> : <IconPlayerPause size="1rem" />
@@ -758,7 +779,7 @@ function GroupCard({
               </Menu.Item>
               <Menu.Item
                 leftSection={<IconPlus size="1rem" />}
-                onClick={() => actions.onAddSection(group, orientation ?? "white")}
+                onClick={() => actions.onAddSection(group, parts[0]?.color ?? "white", false)}
               >
                 {t("Repertoires.AddSection")}
               </Menu.Item>
@@ -803,16 +824,37 @@ function GroupCard({
         }}
       />
 
-      <Group mt="md" grow>
-        <Button
-          leftSection={<IconTarget size="1rem" />}
-          variant={toDo > 0 ? "filled" : "light"}
-          disabled={allPaused}
-          loading={training}
-          onClick={() => actions.onTrain(group)}
-        >
-          {toDo > 0 ? t("Repertoires.Practice", { count: toDo }) : t("Repertoires.TrainGroup")}
-        </Button>
+      {mixed && (
+        <Group mt="md" grow>
+          {parts.map((part) => (
+            <Button
+              key={part.color}
+              leftSection={<ColorDot orientation={part.color} size={12} />}
+              variant={part.toDo > 0 ? "filled" : "light"}
+              disabled={part.files.every((f) => states[f.path]?.paused)}
+              loading={training === `${group.key}\n${part.color}`}
+              onClick={() => actions.onTrain(group, part.color)}
+            >
+              {t("Repertoires.PracticeColor", {
+                color: t(part.color === "white" ? "Repertoires.White" : "Repertoires.Black"),
+                count: part.toDo,
+              })}
+            </Button>
+          ))}
+        </Group>
+      )}
+      <Group mt={mixed ? "xs" : "md"} grow>
+        {!mixed && (
+          <Button
+            leftSection={<IconTarget size="1rem" />}
+            variant={toDo > 0 ? "filled" : "light"}
+            disabled={allPaused}
+            loading={training === group.key}
+            onClick={() => actions.onTrain(group)}
+          >
+            {toDo > 0 ? t("Repertoires.Practice", { count: toDo }) : t("Repertoires.TrainGroup")}
+          </Button>
+        )}
         <Button
           variant="default"
           leftSection={expanded ? <IconChevronUp size="1rem" /> : <IconChevronDown size="1rem" />}
@@ -826,23 +868,47 @@ function GroupCard({
 
       {expanded && (
         <Stack gap={6} mt="md">
-          {group.files.map((file) => (
-            <SectionRow
-              key={file.path}
-              file={file}
-              state={states[file.path] ?? fileState(file, infos?.[file.path])}
-              ideas={infos?.[file.path]?.ideas ?? 0}
-              actions={fileActions}
-            />
+          {parts.map((part) => (
+            <Stack key={part.color} gap={6}>
+              {mixed && (
+                <Group gap={8} mt={4}>
+                  <ColorDot orientation={part.color} size={12} />
+                  <Text size="sm" fw={600} c="dimmed">
+                    {t(part.color === "white" ? "Repertoires.WithWhite" : "Repertoires.WithBlack")}
+                  </Text>
+                </Group>
+              )}
+              {part.files.map((file) => (
+                <SectionRow
+                  key={file.path}
+                  file={file}
+                  state={states[file.path] ?? fileState(file, infos?.[file.path])}
+                  ideas={infos?.[file.path]?.ideas ?? 0}
+                  actions={fileActions}
+                />
+              ))}
+              {mixed && (
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  leftSection={<IconPlus size="0.9rem" />}
+                  onClick={() => actions.onAddSection(group, part.color, true)}
+                >
+                  {t("Repertoires.AddSectionColor", { color: colorName(part.color).toLowerCase() })}
+                </Button>
+              )}
+            </Stack>
           ))}
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<IconPlus size="0.9rem" />}
-            onClick={() => actions.onAddSection(group, orientation ?? "white")}
-          >
-            {t("Repertoires.AddSection")}
-          </Button>
+          {!mixed && (
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={<IconPlus size="0.9rem" />}
+              onClick={() => actions.onAddSection(group, parts[0]?.color ?? "white", false)}
+            >
+              {t("Repertoires.AddSection")}
+            </Button>
+          )}
         </Stack>
       )}
     </Card>
@@ -860,6 +926,7 @@ export default function RepertoiresPage() {
   const [create, setCreate] = useState<{
     dir: string;
     color?: "white" | "black";
+    defaultColor?: "white" | "black";
     title?: string;
   } | null>(null);
   const [renaming, setRenaming] = useState<RepertoireFile | null>(null);
@@ -1142,12 +1209,19 @@ export default function RepertoiresPage() {
   };
 
   const groupActions: GroupActions = {
-    onTrain: (group) => startMixed(group.files, group.key, group.name),
+    onTrain: (group, color) =>
+      color
+        ? startMixed(
+            group.files.filter((f) => orientationOf(f) === color),
+            `${group.key}\n${color}`,
+            `${group.name} · ${t(color === "white" ? "Repertoires.WithWhite" : "Repertoires.WithBlack")}`,
+          )
+        : startMixed(group.files, group.key, group.name),
     onTogglePause: toggleGroupPause,
-    onAddSection: (group, orientation) =>
+    onAddSection: (group, orientation, fixed) =>
       setCreate({
         dir: group.dir,
-        color: orientation,
+        ...(fixed ? { color: orientation } : { defaultColor: orientation }),
         title: t("Repertoires.AddSectionTitle", { group: group.name }),
       }),
     onRename: setRenamingGroup,
@@ -1376,7 +1450,7 @@ export default function RepertoiresPage() {
                       states={states}
                       fileActions={fileActions}
                       actions={groupActions}
-                      training={startingTrain === entry.key}
+                      training={startingTrain}
                     />
                   ),
                 )}
@@ -1393,6 +1467,7 @@ export default function RepertoiresPage() {
         }}
         dir={create?.dir}
         fixedColor={create?.color}
+        defaultColor={create?.defaultColor}
         title={create?.title}
         onCreated={() => mutate()}
       />
@@ -1409,7 +1484,6 @@ export default function RepertoiresPage() {
       )}
       <MoveToGroupModal
         file={moving}
-        orientation={moving ? orientationOf(moving) : "white"}
         groups={groups}
         onClose={() => setMoving(null)}
         onDone={() => {
@@ -1429,7 +1503,6 @@ export default function RepertoiresPage() {
       <SplitModal
         file={splitting}
         orientation={splitting ? orientationOf(splitting) : "white"}
-        groups={groups}
         onClose={() => setSplitting(null)}
         onDone={() => {
           setSplitting(null);

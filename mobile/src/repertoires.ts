@@ -121,7 +121,8 @@ export function prepareDeck(
 export type GroupEntry = {
     folder: string;
     name: string;
-    orientation: "white" | "black";
+    /** "mixed": sections for both colours (shown and practised apart). */
+    orientation: "white" | "black" | "mixed";
     sections: RepertoireEntry[];
     /** Sections not paused. */
     active: RepertoireEntry[];
@@ -161,6 +162,7 @@ export function homeItems(entries: RepertoireEntry[]): HomeItem[] {
             items.push({ kind: "group", group });
         }
         group.sections.push(entry);
+        if (group.orientation !== entry.orientation) group.orientation = "mixed";
         if (!entry.paused) {
             group.active.push(entry);
             group.paused = false;
@@ -177,3 +179,23 @@ export function homeItems(entries: RepertoireEntry[]): HomeItem[] {
 export function practiceName(entry: { folder: string; name: string }): string {
     return entry.folder ? `${entry.folder.split("/").pop()} · ${entry.name}` : entry.name;
 }
+
+export type ColorPart = {
+    color: "white" | "black";
+    sections: RepertoireEntry[];
+    active: RepertoireEntry[];
+    toDo: number;
+};
+
+/** The sections of a group by colour: black first, then white (only the colours present). */
+export function colorParts(group: GroupEntry): ColorPart[] {
+    return (["black", "white"] as const).flatMap((color) => {
+        const sections = group.sections.filter((e) => e.orientation === color);
+        if (sections.length === 0) return [];
+        const active = sections.filter((e) => !e.paused);
+        const toDo = active.reduce((n, e) => n + e.stats.due + e.stats.unseen, 0);
+        return [{ color, sections, active, toDo }];
+    });
+}
+
+export const COLOR_PART_LABEL = { white: "Con il Bianco", black: "Con il Nero" } as const;
