@@ -56,7 +56,7 @@ import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext } from "../common/TreeStateContext";
 import FideInfo from "../databases/FideInfo";
-import { updateCardPerformance } from "../files/opening";
+import { isAcceptedMove, updateCardPerformance } from "../files/opening";
 import { arrowColors } from "../panels/analysis/BestMoves";
 import AnnotationHint from "./AnnotationHint";
 import { BoardBar } from "./BoardBar";
@@ -190,7 +190,7 @@ function Board({
       const i = deck.positions.indexOf(c);
       const timeTaken = Date.now() - cardStartTime;
 
-      if (san !== c.answer) {
+      if (!isAcceptedMove(c, san)) {
         if (sessionStats.mode !== "full") {
           updateCardPerformance(setDeck, i, c.card, 1);
         }
@@ -226,6 +226,13 @@ function Board({
           positionIndex: i,
           timeTaken,
         });
+        if (san !== c.answer) {
+          // One of your other saved moves: right, but not the first choice.
+          notifications.show({
+            color: "blue",
+            message: t("Board.Practice.AlternativeMove", { move: c.answer }),
+          });
+        }
       }
     } else {
       storeMakeMove({

@@ -100,6 +100,7 @@
     "Board.Practice.Accuracy": "Precisione",
     "Board.Practice.Again": "Riprova",
     "Board.Practice.AgainHint": "Mostra di nuovo a breve (1)",
+    "Board.Practice.AlternativeMove": "È una delle tue mosse: giusto, ma la prima scelta del repertorio è {{move}}.",
     "Board.Practice.Build": "Costruisci",
     "Board.Practice.Build.BeforeStart": "Questa posizione è prima della tua posizione iniziale",
     "Board.Practice.Build.BiggestGap": "Vai al tuo divario maggiore",

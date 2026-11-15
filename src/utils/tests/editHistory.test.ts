@@ -59,3 +59,17 @@ test("a position whose move changed is learnt again; the others keep their progr
     ]);
     expect(added).toBe(1);
 });
+
+test("your other saved moves are accepted too", async () => {
+    const { isAcceptedMove } = await import("@/components/files/opening");
+    const root = readGame("1. e4 e5 2. Nf3 (2. Bc4) (2. Nc3) Nc6 *", 0)!.root;
+    const [pos] = syncDeck([], root, "white", []).positions;
+    expect(pos.answer).toBe("Nf3");
+    expect(pos.alternatives).toEqual(["Bc4", "Nc3"]);
+    expect(isAcceptedMove(pos, "Bc4")).toBe(true);
+    expect(isAcceptedMove(pos, "d4")).toBe(false);
+    // An alternative deleted from the file is no longer accepted.
+    const after = readGame("1. e4 e5 2. Nf3 Nc6 *", 0)!.root;
+    const [again] = syncDeck([pos], after, "white", []).positions;
+    expect(again.alternatives).toBeUndefined();
+});

@@ -6,6 +6,7 @@ import { makeSan, parseSan } from "chessops/san";
 import { useEffect, useRef, useState } from "react";
 import {
   formatReviewInterval,
+  isAcceptedMove,
   getNextReviewTimes,
   failedFens,
   getStats,
@@ -284,7 +285,7 @@ export function Practice({
       return;
     }
     const san = makeSan(pos, move);
-    if (san === position.answer) {
+    if (isAcceptedMove(position, san)) {
       setSession((s) => ({ ...s, correct: s.correct + 1 }));
       setPhase({ kind: "correct", san, move });
       if (mode === "all") {
@@ -317,15 +318,18 @@ export function Practice({
   for (const i of path) nodes.push(nodes[nodes.length - 1].children[i]);
   const livePly = path.length;
   const browsing = position !== null && viewPly !== null && viewPly < livePly;
-  const answerNode = position
-    ? nodes[livePly].children.find((c) => c.san === position.answer)
-    : undefined;
   const revealed =
     phase.kind === "correct"
       ? phase.san
       : phase.kind === "incorrect"
         ? position?.answer
         : undefined;
+  // The move shown after the answer: the one played when right (maybe an alternative).
+  const answerNode = position
+    ? nodes[livePly].children.find((c) => c.san === (revealed ?? position.answer))
+    : undefined;
+  const alternativePlayed =
+    phase.kind === "correct" && position !== null && phase.san !== position.answer;
 
   if (analysis) {
     return (
@@ -701,6 +705,7 @@ export function Practice({
             <p>
               <strong>{withSymbols(answerNode, phase.san)}</strong> — giusto! Quanto è stato facile?
             </p>
+            {alternativePlayed && <FirstChoice answer={position.answer} />}
             <div className="grades">
               {GRADES.map(({ grade: g, label, className }) => (
                 <button
@@ -722,6 +727,7 @@ export function Practice({
             <p>
               <strong>{withSymbols(answerNode, phase.san)}</strong> — giusto!
             </p>
+            {alternativePlayed && <FirstChoice answer={position.answer} />}
           </div>
         )}
 
@@ -746,12 +752,11 @@ export function Practice({
                 label: numbered(
                   pgn.root.fen,
                   lineSans.length + 1,
-                  withSymbols(answerNode, position.answer),
+                  withSymbols(answerNode, revealed),
                 ),
                 text: answerNode?.comment ?? "",
-                onSave: (text: string) =>
-                  saveComment(answerNode, [...lineSans, position.answer], text),
-                flag: flagOf([...lineSans, position.answer]),
+                onSave: (text: string) => saveComment(answerNode, [...lineSans, revealed], text),
+                flag: flagOf([...lineSans, revealed]),
               },
             ]}
           />
@@ -787,5 +792,14 @@ export function Header({
       <h1>{title}</h1>
       <div className="header-right">{right}</div>
     </header>
+  );
+}
+
+/** Note under a right answer that is not the repertoire's first choice. */
+function FirstChoice({ answer }: { answer: string }) {
+  return (
+    <p className="first-choice">
+      È una delle tue mosse, ma la prima scelta del repertorio è <strong>{answer}</strong>.
+    </p>
   );
 }

@@ -1438,3 +1438,9 @@ button.danger {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+.first-choice {
+  margin: 6px 0 4px;
+  font-size: 13px;
+  color: var(--dim);
+}

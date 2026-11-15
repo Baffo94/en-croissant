@@ -25,9 +25,17 @@ export const positionSchema = z.object({
 
 export type Position = {
     fen: string;
+    /** The repertoire's move here (main line): the one asked for. */
     answer: string;
+    /** Other moves of yours saved here: accepted too, with a note. */
+    alternatives?: string[];
     card: Card;
 };
+
+/** A move counts as right when it is the answer or one of the saved alternatives. */
+export function isAcceptedMove(position: Position, san: string): boolean {
+    return san === position.answer || (position.alternatives ?? []).includes(san);
+}
 
 /** Practice deck of one game: positions to train and the review history. */
 export type PracticeData = {
@@ -51,9 +59,14 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
             (color === "white" && item.node.halfMoves % 2 === 0) ||
             (color === "black" && item.node.halfMoves % 2 === 1)
         ) {
+            const alternatives = item.node.children
+                .slice(1)
+                .map((c) => c.san)
+                .filter((san): san is string => !!san);
             cards.push({
                 fen: item.node.fen,
                 answer: item.node.children[0].san,
+                ...(alternatives.length > 0 ? { alternatives } : {}),
                 card: createEmptyCard(),
             });
         }
@@ -203,7 +216,12 @@ export function syncDeck(
             merged.push(pos);
             added++;
         } else if (prev) {
-            merged.push({ ...prev, answer: pos.answer });
+            const { alternatives: _old, ...rest } = prev;
+            merged.push({
+                ...rest,
+                answer: pos.answer,
+                ...(pos.alternatives ? { alternatives: pos.alternatives } : {}),
+            });
         } else {
             merged.push(pos);
             added++;
