@@ -40,7 +40,7 @@ import {
 } from "./file";
 import { CreateDirectoryModal, CreateModal, EditModal } from "./Modals";
 
-const FILE_TYPES: FileType[] = ["game", "repertoire", "tournament", "puzzle", "other"];
+const FILE_TYPES: FileType[] = ["game", "repertoire", "tournament", "puzzle", "tactics", "other"];
 type Entry = FileMetadata | Directory;
 
 function findEntryByPath(entries: Entry[], path: string): Entry | null {

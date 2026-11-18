@@ -1,6 +1,7 @@
 import { ActionIcon, Stack, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconBookmarkPlus,
   IconArrowBack,
   IconCamera,
   IconDeviceFloppy,
@@ -30,7 +31,9 @@ import {
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { getPGN } from "@/utils/chess";
-import { createTab } from "@/utils/tabs";
+import { createTab, getTabFile } from "@/utils/tabs";
+import { isTacticsFile } from "@/utils/training/tacticsFiles";
+import { SaveTacticModal } from "@/components/training/SaveTacticModal";
 
 interface BoardControlsProps {
   editingMode: boolean;
@@ -71,6 +74,7 @@ function BoardControls({
   const eraseDrawablesOnClick = useAtomValue(eraseDrawablesOnClickAtom);
   const creatingPlayTab = useRef(false);
   const [isCreatingPlayTab, setIsCreatingPlayTab] = useState(false);
+  const [savingTactic, setSavingTactic] = useState(false);
   const modeActionLabel = t(
     currentTab?.type === "analysis" ? "Board.Action.PlayFromHere" : "Board.Action.AnalyzeGame",
   );
@@ -206,6 +210,17 @@ function BoardControls({
           </ActionIcon>
         </Tooltip>
       )}
+      {currentTab?.type === "analysis" && !isTacticsFile(getTabFile(currentTab)?.path) && (
+        <Tooltip position="right" label={t("Training.MyTactics.SaveAction")}>
+          <ActionIcon
+            onClick={() => setSavingTactic(true)}
+            aria-label={t("Training.MyTactics.SaveAction")}
+          >
+            <IconBookmarkPlus size="1.2rem" />
+          </ActionIcon>
+        </Tooltip>
+      )}
+      <SaveTacticModal opened={savingTactic} onClose={() => setSavingTactic(false)} root={root} />
       <Tooltip
         position="right"
         label={t("Board.Action.FlipBoard", {

@@ -1,4 +1,11 @@
-import { IconBook, IconChess, IconFile, IconPuzzle, IconTrophy } from "@tabler/icons-react";
+import {
+  IconBook,
+  IconChess,
+  IconFile,
+  IconPuzzle,
+  IconTarget,
+  IconTrophy,
+} from "@tabler/icons-react";
 import type { FileType } from "./file";
 
 function getFileIcon(type: FileType) {
@@ -11,6 +18,8 @@ function getFileIcon(type: FileType) {
       return IconTrophy;
     case "puzzle":
       return IconPuzzle;
+    case "tactics":
+      return IconTarget;
     default:
       return IconFile;
   }

@@ -1458,3 +1458,58 @@ button.danger {
   font-size: 13px;
   color: var(--dim);
 }
+
+/* Your own tactics */
+.my-tactics .section-title {
+  margin: 14px 0 8px;
+  font-size: 15px;
+}
+
+.my-tactics .segmented {
+  margin: 14px 0 8px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.solution {
+  margin: 8px 0;
+  line-height: 1.9;
+  font-size: 15px;
+}
+
+.sol-move {
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.sol-move.main {
+  font-weight: 700;
+}
+
+.sol-move.current {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sol-move .num {
+  opacity: 0.6;
+}
+
+.sol-comment {
+  color: var(--dim);
+  font-style: italic;
+}
+
+.sol-variation {
+  color: var(--dim);
+}

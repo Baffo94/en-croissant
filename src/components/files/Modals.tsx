@@ -14,6 +14,7 @@ const FILE_TYPES = [
   { label: "Repertoire", value: "repertoire" },
   { label: "Tournament", value: "tournament" },
   { label: "Puzzle", value: "puzzle" },
+  { label: "Tactics", value: "tactics" },
   { label: "Other", value: "other" },
 ] as const;
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { commands } from "@/bindings";
 import { unwrap } from "@/utils/unwrap";
 
-const fileTypeSchema = z.enum(["repertoire", "game", "tournament", "puzzle", "other"]);
+const fileTypeSchema = z.enum(["repertoire", "game", "tournament", "puzzle", "tactics", "other"]);
 
 export type FileType = z.infer<typeof fileTypeSchema>;
 

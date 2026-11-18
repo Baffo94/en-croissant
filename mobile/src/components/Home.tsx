@@ -16,6 +16,7 @@ import { ENDGAMES } from "@/utils/training/endgames";
 import { isDue, planSession } from "@/utils/training/srs";
 import { useTraining } from "../training";
 import { Icon } from "./Icon";
+import { useCollections } from "./MyTactics";
 import { Header } from "./Practice";
 import { TACTICS_PER_DAY } from "./Tactics";
 
@@ -242,13 +243,16 @@ function GroupItem({
 function TrainingSection({
   tick,
   onTactics,
+  onMyTactics,
   onEndgames,
 }: {
   tick: number;
   onTactics: () => void;
+  onMyTactics: () => void;
   onEndgames: () => void;
 }) {
   const training = useTraining();
+  const myTactics = useCollections().reduce((n, c) => n + c.tactics.length, 0);
   const counts = useMemo(() => {
     const progress = training?.progress;
     const tactics = training?.pack?.tactics ?? [];
@@ -290,6 +294,21 @@ function TrainingSection({
           </button>
         </li>
         <li>
+          <button type="button" className="item" onClick={onMyTactics}>
+            <span className="item-icon">
+              <Icon name="star" size={20} />
+            </span>
+            <span className="item-main">
+              <span className="item-name">Le mie tattiche</span>
+              <span className="item-folder">
+                {myTactics
+                  ? `${myTactics} ${myTactics === 1 ? "tattica salvata" : "tattiche salvate"}`
+                  : "Si salvano sul PC dalle schede di analisi"}
+              </span>
+            </span>
+          </button>
+        </li>
+        <li>
           <button type="button" className="item" onClick={onEndgames}>
             <span className="item-icon">
               <Icon name="crown" size={20} />
@@ -315,6 +334,7 @@ export function Home({
   onSettings,
   onIdeas,
   onTactics,
+  onMyTactics,
   onEndgames,
 }: {
   onOpen: (entry: RepertoireEntry) => void;
@@ -323,6 +343,7 @@ export function Home({
   onSettings: () => void;
   onIdeas: (entry: RepertoireEntry) => void;
   onTactics: () => void;
+  onMyTactics: () => void;
   onEndgames: () => void;
 }) {
   const files = useAppState((s) => s.files);
@@ -454,7 +475,12 @@ export function Home({
           )}
         </>
       )}
-      <TrainingSection tick={tick} onTactics={onTactics} onEndgames={onEndgames} />
+      <TrainingSection
+        tick={tick}
+        onTactics={onTactics}
+        onMyTactics={onMyTactics}
+        onEndgames={onEndgames}
+      />
       {lastSync && (
         <p className="footer">
           Ultima sincronizzazione: {new Date(lastSync).toLocaleString("it-IT")}

@@ -260,7 +260,7 @@ export const telemetryEnabledAtom = atomWithStorage<boolean>("telemetry-enabled"
 export type RecentFile = {
     name: string;
     path: string;
-    type: "game" | "repertoire" | "tournament" | "puzzle" | "other";
+    type: "game" | "repertoire" | "tournament" | "puzzle" | "tactics" | "other";
     lastOpened: number;
 };
 

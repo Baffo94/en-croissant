@@ -109,7 +109,7 @@ export async function createFile({
     dir,
 }: {
     filename: string;
-    filetype: "game" | "repertoire" | "tournament" | "puzzle" | "other";
+    filetype: "game" | "repertoire" | "tournament" | "puzzle" | "tactics" | "other";
     pgn?: string;
     dir: string;
 }): Promise<Result<FileMetadata>> {

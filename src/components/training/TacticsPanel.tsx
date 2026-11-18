@@ -8,6 +8,7 @@ import {
   Card,
   Group,
   NumberInput,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
@@ -37,6 +38,7 @@ import { loadStatsEvals, statsEvalsAtom } from "../stats/analysisRunner";
 import { pawns } from "../stats/StatsEngine";
 import { loadStatsGames, statsGamesAtom } from "../stats/statsStore";
 import { analyseCandidates } from "./engineEval";
+import { MyTacticsPanel } from "./MyTacticsPanel";
 import { TrainingBoard } from "./TrainingBoard";
 import classes from "./training.module.css";
 
@@ -251,7 +253,36 @@ function TacticSession({
   );
 }
 
+const tacticsSourceAtom = atomWithStorage<"games" | "mine">(
+  "training-tactics-source",
+  "games",
+  undefined,
+  {
+    getOnInit: true,
+  },
+);
+
+/** Tactics from your games, or your own collections: kept apart. */
 export function TacticsPanel() {
+  const { t } = useTranslation();
+  const [source, setSource] = useAtom(tacticsSourceAtom);
+  return (
+    <Stack gap="md">
+      <SegmentedControl
+        w="fit-content"
+        value={source}
+        onChange={(v) => setSource(v as "games" | "mine")}
+        data={[
+          { label: t("Training.MyTactics.FromGames"), value: "games" },
+          { label: t("Training.MyTactics.Mine"), value: "mine" },
+        ]}
+      />
+      {source === "games" ? <GamesTacticsPanel /> : <MyTacticsPanel />}
+    </Stack>
+  );
+}
+
+function GamesTacticsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tactics = useTacticsFromGames();
