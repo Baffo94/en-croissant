@@ -149,6 +149,33 @@ const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 /** Requests in flight at once when downloading several files. */
 const PARALLEL = 6;
 
+/** Above this much inline text, GitHub may time out on the tree request (422). */
+const INLINE_LIMIT = 64 * 1024;
+
+/**
+ * Text normally goes inline in the tree request; when there is a lot of it (e.g. many
+ * progress files after a long time offline) it is uploaded as blobs first, in parallel,
+ * so the tree request stays small.
+ */
+async function asBlobsIfLarge(
+    client: GitHubClient,
+    entries: NewTreeEntry[],
+): Promise<NewTreeEntry[]> {
+    const inline = (e: NewTreeEntry) => ("content" in e ? e.content.length : 0);
+    if (entries.reduce((n, e) => n + inline(e), 0) <= INLINE_LIMIT) return entries;
+    const encoder = new TextEncoder();
+    return mapLimit(entries, PARALLEL, async (e) =>
+        "content" in e
+            ? {
+                  path: e.path,
+                  mode: e.mode,
+                  type: e.type,
+                  sha: await client.createBlob(encoder.encode(e.content)),
+              }
+            : e,
+    );
+}
+
 /** Runs `fn` over `items` with at most `limit` calls in flight. */
 async function mapLimit<T, R>(
     items: T[],
@@ -448,7 +475,7 @@ export async function runSync(
     let newHead = head;
     let newTree = baseTree;
     if (entries.length > 0) {
-        const tree = await client.createTree(baseTree, entries);
+        const tree = await client.createTree(baseTree, await asBlobsIfLarge(client, entries));
         newTree = tree;
         const device = options.deviceName ? ` from ${options.deviceName}` : "";
         const commit = await client.createCommit(`Sync${device} ${now.toISOString()}`, tree, head);

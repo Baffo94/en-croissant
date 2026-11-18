@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { vi } from "vitest";
 import type { PracticeData } from "@/state/atoms";
 import {
     type PauseState,
@@ -528,6 +529,26 @@ describe("speed and reliability", () => {
         // And the next sync knows the remote state without asking.
         const { client: c2, calls: calls2 } = countingClient(repo);
         await runSync(env, c2, second.manifest);
+        expect(calls2).toEqual(["getHead"]);
+    });
+
+    test("a large upload goes as blobs first, so the tree request stays small", async () => {
+        const repo = new FakeRepo();
+        const env = new MemoryEnv();
+        const big = (n: number) => `1. e4 {${"x".repeat(30000)} ${n}} *`;
+        for (let i = 0; i < 4; i++) env.put(`R${i}.pgn`, big(i));
+        const spy = vi.spyOn(FakeClient.prototype, "createTree");
+        const { client: c, calls } = countingClient(repo);
+        const first = await runSync(env, c, emptyManifest("k"));
+        const sent = spy.mock.calls.flatMap(([, entries]) => entries);
+        spy.mockRestore();
+        expect(sent.length).toBeGreaterThanOrEqual(4);
+        expect(sent.filter((e) => "content" in e)).toEqual([]);
+        expect(calls.filter((x) => x === "createBlob").length).toBeGreaterThanOrEqual(4);
+        expect(repo.text("repertoires/R2.pgn")).toBe(big(2));
+        // The shas the manifest expects are the real ones: nothing to do next time.
+        const { client: c2, calls: calls2 } = countingClient(repo);
+        await runSync(env, c2, first.manifest);
         expect(calls2).toEqual(["getHead"]);
     });
 
