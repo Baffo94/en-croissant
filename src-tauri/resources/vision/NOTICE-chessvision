@@ -1,0 +1,4 @@
+board-pieces.onnx is the piece classifier of chessvision by Harshit Pawar
+(https://github.com/harshitpawar64/chessvision), licensed under GPL-3.0-only
+(see LICENSE-chessvision). Changed only to give its input a fixed square size
+(64x64) and to drop the intermediate shape annotations.

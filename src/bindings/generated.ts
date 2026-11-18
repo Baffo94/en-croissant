@@ -21,6 +21,14 @@ async recognizeChessImage(path: string) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async scanBoardImage(path: string | null, data: string | null) : Promise<Result<ScanResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_board_image", { path, data }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getBestMoves(id: string, engine: string, tab: string, goMode: GoMode, options: EngineOptions) : Promise<Result<[number, BestMoves[]] | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_best_moves", { id, engine, tab, goMode, options }) };
@@ -628,6 +636,24 @@ export type Puzzle = { id: number; fen: string; moves: string; rating: number; r
 export type PuzzleDatabaseInfo = { title: string; description: string; puzzleCount: number; storageSize: bigint; path: string }
 export type QueryOptions<SortT> = { skipCount: boolean; page?: number | null; pageSize?: number | null; sort: SortT; direction: SortDirection }
 export type QueryResponse<T> = { data: T; count: number | null }
+export type ScanResult = { width: number; height: number; boards: ScannedBoard[] }
+export type ScannedBoard = { 
+/**
+ * Where the board is in the image (pixels).
+ */
+x: number; y: number; width: number; height: number; 
+/**
+ * 64 squares from a8 to h1: FEN letter, or '.' when empty.
+ */
+squares: string; 
+/**
+ * How sure the model is of each square (0–1), same order.
+ */
+confidence: number[]; 
+/**
+ * The diagram had Black at the bottom (squares are already turned).
+ */
+flipped: boolean }
 export type Score = { value: ScoreValue; 
 /**
  * The probability of each result (win, draw, loss).

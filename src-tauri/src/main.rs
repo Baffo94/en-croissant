@@ -9,6 +9,7 @@ mod engine;
 mod error;
 mod evalcache;
 mod game;
+mod scan;
 mod vision;
 
 mod fs;
@@ -129,6 +130,7 @@ fn main() {
         .commands(tauri_specta::collect_commands!(
             close_splashscreen,
             vision::recognize_chess_image,
+            scan::scan_board_image,
             get_best_moves,
             analyze_game,
             cancel_analysis,

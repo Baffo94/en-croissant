@@ -14,6 +14,7 @@ import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as EnginesRouteImport } from './routes/engines'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as RepertoiresRouteImport } from './routes/repertoires'
+import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StatisticsRouteImport } from './routes/statistics'
 import { Route as TrainingRouteImport } from './routes/training'
@@ -43,6 +44,11 @@ const FilesRoute = FilesRouteImport.update({
 const RepertoiresRoute = RepertoiresRouteImport.update({
   id: '/repertoires',
   path: '/repertoires',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/engines': typeof EnginesRoute
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/statistics': typeof StatisticsRoute
   '/training': typeof TrainingRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/engines': typeof EnginesRoute
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/statistics': typeof StatisticsRoute
   '/training': typeof TrainingRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/engines': typeof EnginesRoute
   '/files': typeof FilesRoute
   '/repertoires': typeof RepertoiresRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/statistics': typeof StatisticsRoute
   '/training': typeof TrainingRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/engines'
     | '/files'
     | '/repertoires'
+    | '/scan'
     | '/settings'
     | '/statistics'
     | '/training'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/engines'
     | '/files'
     | '/repertoires'
+    | '/scan'
     | '/settings'
     | '/statistics'
     | '/training'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/engines'
     | '/files'
     | '/repertoires'
+    | '/scan'
     | '/settings'
     | '/statistics'
     | '/training'
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   EnginesRoute: typeof EnginesRoute
   FilesRoute: typeof FilesRoute
   RepertoiresRoute: typeof RepertoiresRoute
+  ScanRoute: typeof ScanRoute
   SettingsRoute: typeof SettingsRoute
   StatisticsRoute: typeof StatisticsRoute
   TrainingRoute: typeof TrainingRoute
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/repertoires'
       fullPath: '/repertoires'
       preLoaderRoute: typeof RepertoiresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -241,6 +261,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnginesRoute: EnginesRoute,
   FilesRoute: FilesRoute,
   RepertoiresRoute: RepertoiresRoute,
+  ScanRoute: ScanRoute,
   SettingsRoute: SettingsRoute,
   StatisticsRoute: StatisticsRoute,
   TrainingRoute: TrainingRoute,
