@@ -1,7 +1,8 @@
 // Orchestrates one sync run. All side effects go through `SyncEnv` (local files and
 // practice decks) and `GitHubClient` (remote), so the algorithm can be tested in memory.
 
-import type { PracticeData } from "@/components/files/opening";
+import { type PracticeData, syncDeck } from "@/components/files/opening";
+import { type PgnGame, parsePgnGames } from "@/utils/pgnTree";
 import { mergeFlags, type ReviewFlag } from "@/utils/flags";
 import {
     type ContentAction,
@@ -417,9 +418,25 @@ export async function runSync(
 
         const localGames = env.getDecks(relPgn);
         const merged: Record<string, PracticeData> = {};
+        // The decks follow the file as it is now, the same way on every device (so that
+        // they agree): positions added or removed since a device built its deck.
+        let games: PgnGame[] | null = null;
+        try {
+            games = parsePgnGames(decoder.decode(await env.readFile(relPgn)));
+        } catch {
+            games = null;
+        }
         for (const game of new Set([...Object.keys(localGames), ...Object.keys(remoteGames)])) {
             const local = localGames[game] ?? emptyDeck();
-            const deck = mergeDecks(local, remoteGames[game] ?? emptyDeck());
+            let deck = mergeDecks(local, remoteGames[game] ?? emptyDeck());
+            const pgn = games?.[Number(game)];
+            if (pgn && deck.positions.length > 0) {
+                deck = {
+                    ...deck,
+                    positions: syncDeck(deck.positions, pgn.root, pgn.orientation, pgn.start)
+                        .positions,
+                };
+            }
             if (JSON.stringify(deck) !== JSON.stringify(local)) {
                 env.setDeck(relPgn, game, deck);
                 summary.progressUpdated++;

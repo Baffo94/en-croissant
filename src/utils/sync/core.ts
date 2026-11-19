@@ -231,21 +231,23 @@ function logKey(log: PracticeData["logs"][number]): string {
 /**
  * Merges the local deck with the remote one.
  *
- * - The list of positions comes from the local deck when it is not empty, because the
- *   desktop app rebuilds it from the PGN (the source of truth). An empty local deck
- *   (e.g. a file never practiced on this computer) takes the remote positions.
- * - For each position the most recently reviewed card wins.
- * - Review logs are the union of both sides, without duplicates, ordered by time.
+ * Positions of both decks are kept (the local order first): a deck built on another
+ * device, or from another version of the file, must never drop the progress of the
+ * positions it lacks. For a position in both, the most recently reviewed card wins,
+ * with the move it was reviewed on. Positions no longer in the file are removed when
+ * the deck is checked against the file (`syncDeck`, done after the merge by the sync).
  */
 export function mergeDecks(local: PracticeData, remote: PracticeData): PracticeData {
     const remoteByFen = new Map(remote.positions.map((p) => [p.fen, p]));
-    const source = local.positions.length > 0 ? local.positions : remote.positions;
-    const positions = source.map((pos) => {
+    const localFens = new Set(local.positions.map((p) => p.fen));
+    const positions = local.positions.map((pos) => {
         const other = remoteByFen.get(pos.fen);
         if (!other) return pos;
-        const card = newerCard(pos.card, other.card);
-        return card === pos.card ? pos : { ...pos, card };
+        return newerCard(pos.card, other.card) === pos.card ? pos : other;
     });
+    for (const pos of remote.positions) {
+        if (!localFens.has(pos.fen)) positions.push(pos);
+    }
 
     const seen = new Set<string>();
     const logs: PracticeData["logs"] = [];

@@ -26,6 +26,8 @@ import { reviewExercise } from "../training/srs";
 import { trainingDocs } from "../training/syncDocs";
 import { emptyTrainingProgress, parseTrainingProgress, stableJson } from "../training/trainingDocs";
 import { setMoveComment } from "../pgnEdit";
+import { buildFromTree } from "@/components/files/opening";
+import { parsePgnGames } from "../pgnTree";
 import { GitHubClient, GitHubError, type NewTreeEntry, type TreeEntry } from "../sync/github";
 
 const enc = new TextEncoder();
@@ -131,7 +133,7 @@ describe("core", () => {
         ]);
     });
 
-    test("mergeDecks keeps local positions, newest card and union of logs", () => {
+    test("mergeDecks keeps the positions of both, newest card and union of logs", () => {
         const local: PracticeData = {
             positions: [
                 { fen: "A", answer: "e4", card: card("2026-10-01T10:00:00Z", 3) },
@@ -148,7 +150,8 @@ describe("core", () => {
             logs: [log("A", "2026-10-01T10:00:00Z"), log("A", "2026-10-10T10:00:00Z", 4)],
         };
         const merged = mergeDecks(local, remote);
-        expect(merged.positions.map((p) => p.fen)).toEqual(["A", "B"]);
+        // A position only the other device has keeps its progress.
+        expect(merged.positions.map((p) => p.fen)).toEqual(["A", "B", "OLD"]);
         expect(merged.positions[0].card.reps).toBe(4);
         expect(merged.positions[1].card.reps).toBe(2);
         expect(merged.logs).toHaveLength(3);
@@ -359,23 +362,28 @@ function client(repo: FakeRepo) {
     return new FakeClient(repo) as unknown as GitHubClient;
 }
 
+/** Real positions of the decks in the sync tests (decks are checked against the files). */
+const W = "1. e4 e5 2. Nf3 *";
+const S0 = buildFromTree(parsePgnGames(W)[0].root, "white", [])[0].fen;
+const S1 = buildFromTree(parsePgnGames("1. e4 e5 2. Nf3 Nc6 3. Bb5 *")[0].root, "white", [])[1].fen;
+
 describe("runSync", () => {
     test("first sync uploads repertoire and progress, second sync is a no-op", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         env.put("White.info", '{"type":"repertoire","tags":[]}');
         env.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card("2026-10-01T10:00:00Z", 1) }],
-            logs: [log("A", "2026-10-01T10:00:00Z")],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-01T10:00:00Z", 1) }],
+            logs: [log(S0, "2026-10-01T10:00:00Z")],
         });
 
         const first = await runSync(env, client(repo), emptyManifest("k"));
         expect(first.summary.committed).toBe(true);
-        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
+        expect(repo.text("repertoires/White.pgn")).toBe(W);
         expect(repo.text("repertoires/White.info")).toContain("repertoire");
         const progress = parseProgress(repo.text("progress/White.json")!);
-        expect(progress["0"].positions[0].fen).toBe("A");
+        expect(progress["0"].positions[0].fen).toBe(S0);
 
         const head = repo.head;
         const second = await runSync(env, client(repo), first.manifest);
@@ -386,26 +394,26 @@ describe("runSync", () => {
     test("progress made on another device is merged locally", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
+        pc.put("White.pgn", "1. e4 e5 2. Nf3 Nc6 3. Bb5 *");
         pc.setDeck("White.pgn", "0", {
             positions: [
-                { fen: "A", answer: "e4", card: card("2026-10-01T10:00:00Z", 1) },
-                { fen: "B", answer: "Nf3", card: card(undefined, 0) },
+                { fen: S0, answer: "Nf3", card: card("2026-10-01T10:00:00Z", 1) },
+                { fen: S1, answer: "Bb5", card: card(undefined, 0) },
             ],
-            logs: [log("A", "2026-10-01T10:00:00Z")],
+            logs: [log(S0, "2026-10-01T10:00:00Z")],
         });
         const first = await runSync(pc, client(repo), emptyManifest("k"));
 
         // The phone reviews position B and pushes new progress.
         const phoneProgress = parseProgress(repo.text("progress/White.json")!);
         phoneProgress["0"].positions[1].card = card("2026-10-20T08:00:00Z", 1);
-        phoneProgress["0"].logs.push(log("B", "2026-10-20T08:00:00Z"));
+        phoneProgress["0"].logs.push(log(S1, "2026-10-20T08:00:00Z"));
         await repo.commitFiles({ "progress/White.json": serializeProgress(phoneProgress) });
 
         // Meanwhile the PC reviews position A.
         const deck = pc.getDecks("White.pgn")["0"];
         deck.positions[0].card = card("2026-10-21T08:00:00Z", 2);
-        deck.logs.push(log("A", "2026-10-21T08:00:00Z"));
+        deck.logs.push(log(S0, "2026-10-21T08:00:00Z"));
         pc.setDeck("White.pgn", "0", deck);
 
         const second = await runSync(pc, client(repo), first.manifest);
@@ -417,28 +425,76 @@ describe("runSync", () => {
         expect(second.summary.progressUpdated).toBe(1);
     });
 
+    test("a deck built from an old version of the file never drops the other device's progress", async () => {
+        const repo = new FakeRepo();
+        const file = "1. e4 e5 2. Nf3 Nc6 3. Bb5 *";
+        const phone = new MemoryEnv();
+        phone.put("White.pgn", file);
+        phone.setDeck("White.pgn", "0", {
+            positions: [
+                { fen: S0, answer: "Nf3", card: card("2026-11-15T10:00:00Z", 3) },
+                { fen: S1, answer: "Bb5", card: card("2026-11-15T10:00:00Z", 2) },
+            ],
+            logs: [log(S0, "2026-11-15T10:00:00Z"), log(S1, "2026-11-15T10:00:00Z")],
+        });
+        await runSync(phone, client(repo), emptyManifest("phone"));
+
+        // The PC built its deck when the file had only the first moves, and never since.
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", file);
+        pc.setDeck("White.pgn", "0", {
+            positions: [{ fen: S0, answer: "Nf3", card: card(undefined, 0) }],
+            logs: [],
+        });
+        await runSync(pc, client(repo), emptyManifest("pc"));
+        const deck = pc.getDecks("White.pgn")["0"];
+        expect(deck.positions.map((p) => [p.answer, p.card.reps])).toEqual([
+            ["Nf3", 3],
+            ["Bb5", 2],
+        ]);
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions).toHaveLength(2);
+    });
+
+    test("positions of lines deleted from the file leave the decks of every device", async () => {
+        const repo = new FakeRepo();
+        const pc = new MemoryEnv();
+        pc.put("White.pgn", "1. e4 e5 2. Nf3 Nc6 3. Bb5 *");
+        pc.setDeck("White.pgn", "0", {
+            positions: [
+                { fen: S0, answer: "Nf3", card: card("2026-11-15T10:00:00Z", 3) },
+                { fen: S1, answer: "Bb5", card: card("2026-11-15T10:00:00Z", 2) },
+            ],
+            logs: [],
+        });
+        const first = await runSync(pc, client(repo), emptyManifest("pc"));
+        pc.put("White.pgn", W);
+        await runSync(pc, client(repo), first.manifest);
+        expect(pc.getDecks("White.pgn")["0"].positions.map((p) => p.answer)).toEqual(["Nf3"]);
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions).toHaveLength(1);
+    });
+
     test("a new PC downloads repertoires and progress", async () => {
         const repo = new FakeRepo();
         const pc1 = new MemoryEnv();
-        pc1.put("dir/Black.pgn", "1. e4 c5 *");
+        pc1.put("dir/Black.pgn", W);
         pc1.setDeck("dir/Black.pgn", "0", {
-            positions: [{ fen: "A", answer: "c5", card: card("2026-10-01T10:00:00Z", 1) }],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-01T10:00:00Z", 1) }],
             logs: [],
         });
         await runSync(pc1, client(repo), emptyManifest("k"));
 
         const pc2 = new MemoryEnv();
         await runSync(pc2, client(repo), emptyManifest("k"));
-        expect(pc2.text("dir/Black.pgn")).toBe("1. e4 c5 *");
-        expect(pc2.getDecks("dir/Black.pgn")["0"].positions[0].fen).toBe("A");
+        expect(pc2.text("dir/Black.pgn")).toBe(W);
+        expect(pc2.getDecks("dir/Black.pgn")["0"].positions[0].fen).toBe(S0);
     });
 
     test("deleting a repertoire locally removes it and its progress remotely", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         env.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card(undefined, 0) }],
+            positions: [{ fen: S0, answer: "Nf3", card: card(undefined, 0) }],
             logs: [],
         });
         const first = await runSync(env, client(repo), emptyManifest("k"));
@@ -451,7 +507,7 @@ describe("runSync", () => {
     test("conflicting edits keep both versions", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         const first = await runSync(env, client(repo), emptyManifest("k"));
         await repo.commitFiles({ "repertoires/White.pgn": "1. d4 *" });
         env.put("White.pgn", "1. c4 *");
@@ -467,14 +523,14 @@ describe("runSync", () => {
     test("a concurrent push is reported so the caller can retry", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         repo.racePushes = 1;
         await expect(runSync(env, client(repo), emptyManifest("k"))).rejects.toBeInstanceOf(
             ConcurrentPushError,
         );
         const retry = await runSync(env, client(repo), emptyManifest("k"));
         expect(retry.summary.committed).toBe(true);
-        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
+        expect(repo.text("repertoires/White.pgn")).toBe(W);
         expect(repo.text("race.txt")).toBeDefined();
     });
 });
@@ -501,10 +557,10 @@ describe("speed and reliability", () => {
     test("a sync with nothing new costs a single request", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         env.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card("2026-10-01T10:00:00Z", 1) }],
-            logs: [log("A", "2026-10-01T10:00:00Z")],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-01T10:00:00Z", 1) }],
+            logs: [log(S0, "2026-10-01T10:00:00Z")],
         });
         const first = await runSync(env, client(repo), emptyManifest("k"));
         const { client: c, calls } = countingClient(repo);
@@ -516,16 +572,16 @@ describe("speed and reliability", () => {
     test("new progress is committed without blob requests", async () => {
         const repo = new FakeRepo();
         const env = new MemoryEnv();
-        env.put("White.pgn", "1. e4 *");
+        env.put("White.pgn", W);
         const first = await runSync(env, client(repo), emptyManifest("k"));
         env.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card("2026-10-02T10:00:00Z", 1) }],
-            logs: [log("A", "2026-10-02T10:00:00Z")],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-02T10:00:00Z", 1) }],
+            logs: [log(S0, "2026-10-02T10:00:00Z")],
         });
         const { client: c, calls } = countingClient(repo);
         const second = await runSync(env, c, first.manifest);
         expect(calls).toEqual(["getHead", "createTree", "createCommit", "updateHead"]);
-        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe("A");
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe(S0);
         // And the next sync knows the remote state without asking.
         const { client: c2, calls: calls2 } = countingClient(repo);
         await runSync(env, c2, second.manifest);
@@ -555,13 +611,13 @@ describe("speed and reliability", () => {
     test("a stale branch head (HTTP cache) is retried until the push goes through", async () => {
         const repo = new FakeRepo();
         const phone = new MemoryEnv();
-        phone.put("White.pgn", "1. e4 *");
+        phone.put("White.pgn", W);
         const first = await runSync(phone, client(repo), emptyManifest("k"));
         // Another device pushes; the phone keeps seeing the old head twice.
         const oldHead = repo.head;
         await repo.commitFiles({ "repertoires/Black.pgn": "1. e4 c5 *" });
         phone.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card("2026-10-02T10:00:00Z", 1) }],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-02T10:00:00Z", 1) }],
             logs: [],
         });
         const { client: c } = countingClient(repo, [oldHead, oldHead]);
@@ -579,7 +635,7 @@ describe("speed and reliability", () => {
         expect(result.summary.committed).toBe(true);
         expect(phone.text("Black.pgn")).toBe("1. e4 c5 *");
         expect(repo.text("repertoires/Black.pgn")).toBe("1. e4 c5 *");
-        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe("A");
+        expect(parseProgress(repo.text("progress/White.json")!)["0"].positions[0].fen).toBe(S0);
     });
 
     test("files with a byte order mark keep their exact bytes", async () => {
@@ -674,7 +730,7 @@ describe("runSync read-only content (mobile)", () => {
     test("never uploads or deletes repertoires, but uploads progress", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
+        pc.put("White.pgn", W);
         pc.put("Black.pgn", "1. e4 c5 *");
         const pcSync = await runSync(pc, client(repo), emptyManifest("pc"));
 
@@ -682,21 +738,21 @@ describe("runSync read-only content (mobile)", () => {
         const first = await runSync(phone, client(repo), emptyManifest("phone"), {
             readOnlyContent: true,
         });
-        expect(phone.text("White.pgn")).toBe("1. e4 *");
+        expect(phone.text("White.pgn")).toBe(W);
 
         // Local edits / deletions / extra files on the phone are reverted, not pushed.
         phone.put("White.pgn", "1. d4 *");
         phone.files.delete("Black.pgn");
         phone.put("Extra.pgn", "1. c4 *");
         phone.setDeck("White.pgn", "0", {
-            positions: [{ fen: "A", answer: "e4", card: card("2026-10-20T08:00:00Z", 1) }],
-            logs: [log("A", "2026-10-20T08:00:00Z")],
+            positions: [{ fen: S0, answer: "Nf3", card: card("2026-10-20T08:00:00Z", 1) }],
+            logs: [log(S0, "2026-10-20T08:00:00Z")],
         });
         await runSync(phone, client(repo), first.manifest, { readOnlyContent: true });
-        expect(phone.text("White.pgn")).toBe("1. e4 *");
+        expect(phone.text("White.pgn")).toBe(W);
         expect(phone.text("Black.pgn")).toBe("1. e4 c5 *");
         expect(phone.text("Extra.pgn")).toBeUndefined();
-        expect(repo.text("repertoires/White.pgn")).toBe("1. e4 *");
+        expect(repo.text("repertoires/White.pgn")).toBe(W);
         expect(repo.text("repertoires/Extra.pgn")).toBeUndefined();
         expect(parseProgress(repo.text("progress/White.json")!)["0"].logs).toHaveLength(1);
 
@@ -715,7 +771,7 @@ describe("renames", () => {
     test("renaming on the PC moves progress, also for the phone", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
+        pc.put("White.pgn", W);
         pc.setDeck("White.pgn", "0", reviewed("A", "2026-10-01T10:00:00Z"));
         const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
 
@@ -751,7 +807,7 @@ describe("renames", () => {
         });
         expect(phoneThird.summary.renamed).toBe(1);
         expect(phone.text("White.pgn")).toBeUndefined();
-        expect(phone.text("Openings/Bianco.pgn")).toBe("1. e4 *");
+        expect(phone.text("Openings/Bianco.pgn")).toBe(W);
         expect(phone.getDecks("Openings/Bianco.pgn")["0"].logs).toHaveLength(2);
         expect(phone.getDecks("White.pgn")).toEqual({});
     });
@@ -759,7 +815,7 @@ describe("renames", () => {
     test("a renamed and edited file is not treated as a rename", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("White.pgn", "1. e4 *");
+        pc.put("White.pgn", W);
         const first = await runSync(pc, client(repo), emptyManifest("pc"));
         pc.files.delete("White.pgn");
         pc.put("Bianco.pgn", "1. e4 e5 *");
@@ -771,10 +827,10 @@ describe("renames", () => {
     test("two files with the same content are paired one to one", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("A.pgn", "1. e4 *");
-        pc.put("B.pgn", "1. e4 *");
-        pc.setDeck("A.pgn", "0", reviewed("A", "2026-10-01T10:00:00Z"));
-        pc.setDeck("B.pgn", "0", reviewed("B", "2026-10-01T10:00:00Z"));
+        pc.put("A.pgn", W);
+        pc.put("B.pgn", W);
+        pc.setDeck("A.pgn", "0", reviewed(S0, "2026-10-01T10:00:00Z"));
+        pc.setDeck("B.pgn", "0", reviewed(S0, "2026-10-02T10:00:00Z"));
         const first = await runSync(pc, client(repo), emptyManifest("pc"));
         pc.files.set("C.pgn", pc.files.get("A.pgn")!);
         pc.files.set("D.pgn", pc.files.get("B.pgn")!);
@@ -782,8 +838,10 @@ describe("renames", () => {
         pc.files.delete("B.pgn");
         const second = await runSync(pc, client(repo), first.manifest);
         expect(second.summary.renamed).toBe(2);
-        const fens = ["C", "D"].map((n) => pc.getDecks(`${n}.pgn`)["0"].positions[0].fen).sort();
-        expect(fens).toEqual(["A", "B"]);
+        const days = ["C", "D"]
+            .map((n) => String(pc.getDecks(`${n}.pgn`)["0"].logs[0].review).slice(0, 10))
+            .sort();
+        expect(days).toEqual(["2026-10-01", "2026-10-02"]);
     });
 });
 
@@ -818,7 +876,7 @@ describe("pause", () => {
     test("an older remote change does not override a newer local one", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("Scotch.pgn", "1. e4 *");
+        pc.put("Scotch.pgn", W);
         const first = await runSync(pc, client(repo), emptyManifest("pc"));
         await repo.commitFiles({
             "progress/Scotch.json": serializeProgress(
@@ -835,7 +893,7 @@ describe("pause", () => {
     test("the pause follows a renamed repertoire", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("Scotch.pgn", "1. e4 *");
+        pc.put("Scotch.pgn", W);
         pc.setPause("Scotch.pgn", { paused: true, changedAt: "2026-11-02T00:00:00Z" });
         const first = await runSync(pc, client(repo), emptyManifest("pc"));
         pc.files.set("Scozzese.pgn", pc.files.get("Scotch.pgn")!);
@@ -851,7 +909,7 @@ describe("training documents", () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
         pc.role = "pc";
-        pc.put("Philidor.pgn", "1. e4 *");
+        pc.put("Philidor.pgn", W);
         const pack = stableJson({ version: 1, built: "2026-11-13", tactics: [{ id: "g#1" }] });
         pc.training.pack = pack;
         const pcFirst = await runSync(pc, client(repo), emptyManifest("pc"));
@@ -931,7 +989,7 @@ describe("flags to review", () => {
     test("flags follow a renamed repertoire", async () => {
         const repo = new FakeRepo();
         const pc = new MemoryEnv();
-        pc.put("Scotch.pgn", "1. e4 *");
+        pc.put("Scotch.pgn", W);
         pc.setFlags("Scotch.pgn", setFlag([], 0, ["e4"], "Rivedere", "PC"));
         const first = await runSync(pc, client(repo), emptyManifest("pc"));
         pc.files.set("Scozzese.pgn", pc.files.get("Scotch.pgn")!);
