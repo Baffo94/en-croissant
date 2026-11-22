@@ -7,6 +7,7 @@ import {
   IconNotes,
   IconTargetArrow,
   IconZoomCheck,
+  IconBooks,
 } from "@tabler/icons-react";
 import { useLoaderData } from "@tanstack/react-router";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -36,6 +37,7 @@ import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import { TreeStateContext } from "../common/TreeStateContext";
+import RepertoirePanel from "@/components/panels/repertoire/RepertoirePanel";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
 import DatabasePanel from "../panels/database/DatabasePanel";
@@ -271,6 +273,9 @@ function BoardAnalysis() {
               <Tabs.Tab value="info" leftSection={<IconInfoCircle size="1rem" />}>
                 {t("Board.Tabs.Info")}
               </Tabs.Tab>
+              <Tabs.Tab value="repertoire" leftSection={<IconBooks size="1rem" />}>
+                {t("Board.Tabs.Repertoire")}
+              </Tabs.Tab>
             </Tabs.List>
             {isCompact && (
               <Tabs.Panel value="moves" flex={1} style={{ overflowY: "hidden" }}>
@@ -293,6 +298,9 @@ function BoardAnalysis() {
             </Tabs.Panel>
             <Tabs.Panel value="analysis" flex={1} style={{ overflowY: "hidden" }}>
               <AnalysisPanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="repertoire" flex={1} style={{ overflowY: "hidden" }}>
+              <RepertoirePanel />
             </Tabs.Panel>
           </Tabs>
         </Paper>

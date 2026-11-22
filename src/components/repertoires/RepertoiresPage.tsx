@@ -45,7 +45,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useLoaderData, useNavigate } from "@tanstack/react-router";
-import { exists, mkdir, readDir, remove } from "@tauri-apps/plugin-fs";
+import { exists, mkdir, remove } from "@tauri-apps/plugin-fs";
 import { openPath } from "@tauri-apps/plugin-opener";
 import dayjs from "dayjs";
 import { dayjsLocale } from "@/utils/dateLocale";
@@ -55,23 +55,11 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { commands } from "@/bindings";
 import ConfirmModal from "@/components/common/ConfirmModal";
-import {
-  type Directory,
-  type FileMetadata,
-  processEntriesRecursively,
-} from "@/components/files/file";
 import { EditModal } from "@/components/files/Modals";
 import { buildFromTree, getStats, type PracticeData } from "@/components/files/opening";
 import { SyncStatusText, summaryText } from "@/components/SyncButton";
 import CreateRepertoireModal from "@/components/tabs/CreateRepertoireModal";
-import {
-  activeTabAtom,
-  addRecentFileAtom,
-  deckAtomFamily,
-  practiceSessionStatsFamily,
-  tabFamily,
-  tabsAtom,
-} from "@/state/atoms";
+import { activeTabAtom, deckAtomFamily, practiceSessionStatsFamily, tabsAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
 import { ideaPoints } from "@/utils/ideas";
 import { getMoveComment } from "@/utils/pgnEdit";
@@ -90,11 +78,16 @@ import {
   syncNow,
   syncStatusAtom,
 } from "@/utils/sync";
-import { normalizePath, relativePath } from "@/utils/sync/core";
-import { createTab } from "@/utils/tabs";
+import { relativePath } from "@/utils/sync/core";
 import { prepareMixedSession } from "@/utils/trainAll";
 import { unwrap } from "@/utils/unwrap";
 import { CheckPanel, useOpenIssues } from "./CheckPanel";
+import {
+  listRepertoires,
+  openRepertoireTab,
+  practiceLabel,
+  type RepertoireFile,
+} from "./repertoireFiles";
 import { GamesPanel } from "./GamesPanel";
 import { FlagsPanel, useAllFlags } from "./FlagsPanel";
 import { PhoneEditsPanel, useNewPhoneEdits } from "./PhoneEditsPanel";
@@ -107,62 +100,14 @@ import {
   removeIfEmpty,
   SplitModal,
 } from "./GroupModals";
-import {
-  type CardStats,
-  dirName,
-  emptyStats,
-  groupFiles,
-  groupOf,
-  type Listed,
-  sumStats,
-} from "./groups";
+import { type CardStats, dirName, emptyStats, groupFiles, type Listed, sumStats } from "./groups";
 
 /** Sync shortly after pausing/resuming, so the phone sees it. */
 const PAUSE_SYNC_DELAY = 5_000;
 
-type RepertoireFile = FileMetadata & {
-  inSyncFolder: boolean;
-  folder: string;
-  /** Repertoires folder the file belongs to (sync folder or documents). */
-  base: string;
-  /** Group (subfolder of `base`) the file is a section of; "" for none. */
-  group: string;
-};
-
 type Info = { orientation: "white" | "black"; positions: number; ideas: number };
 
 type FileState = { stats: CardStats; paused: boolean; toDo: number };
-
-/** Name shown while practising: "Group · Section" for a section of a group. */
-function practiceLabel(file: RepertoireFile): string {
-  return file.group ? `${file.group.split("/").pop()} · ${file.name}` : file.name;
-}
-
-function flatten(entries: (FileMetadata | Directory)[]): FileMetadata[] {
-  return entries.flatMap((e) => (e.type === "directory" ? flatten(e.children) : [e]));
-}
-
-async function listRepertoires(documentDir: string, syncFolder: string | null) {
-  const roots = [documentDir];
-  if (syncFolder && relativePath(documentDir, syncFolder) === null) {
-    if (normalizePath(syncFolder) !== normalizePath(documentDir)) roots.push(syncFolder);
-  }
-  const files: RepertoireFile[] = [];
-  const seen = new Set<string>();
-  for (const root of roots) {
-    if (!(await exists(root))) continue;
-    for (const file of flatten(await processEntriesRecursively(root, await readDir(root)))) {
-      if (file.metadata.type !== "repertoire" || seen.has(normalizePath(file.path))) continue;
-      seen.add(normalizePath(file.path));
-      const rel = relativePath(root, file.path) ?? file.name;
-      const folder = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-      const inSyncFolder = syncFolder !== null && relativePath(syncFolder, file.path) !== null;
-      const base = inSyncFolder && syncFolder ? syncFolder : root;
-      files.push({ ...file, folder, inSyncFolder, base, group: groupOf(base, file.path) });
-    }
-  }
-  return files.sort((a, b) => a.name.localeCompare(b.name));
-}
 
 /** Orientation and positions of the first game of each file, parsed from the PGN. */
 async function readInfos(files: RepertoireFile[]): Promise<Record<string, Info>> {
@@ -1064,45 +1009,7 @@ export default function RepertoiresPage() {
     practice: boolean,
     at?: { game: number; line: string[] },
   ) {
-    const game = at?.game ?? 0;
-    const [pgnResult, countResult] = await Promise.all([
-      commands.readGames(file.path, game, game),
-      commands.countPgnGames(file.path),
-    ]);
-    const pgn = unwrap(pgnResult)[0] ?? "";
-    // Opened on a given position (from the repertoire check): path of child indices.
-    let position: {
-      headers: Awaited<ReturnType<typeof parsePGN>>["headers"];
-      path: number[];
-    } | null = null;
-    if (at) {
-      const tree = await parsePGN(pgn);
-      const path: number[] = [];
-      let node = tree.root;
-      for (const san of at.line) {
-        const i = node.children.findIndex((c) => c.san === san);
-        if (i < 0) break;
-        path.push(i);
-        node = node.children[i];
-      }
-      position = { headers: tree.headers, path };
-    }
-    const tabId = await createTab({
-      tab: { name: practiceLabel(file), type: "analysis" },
-      setTabs,
-      setActiveTab,
-      pgn,
-      ...(position ? { headers: position.headers, position: position.path } : {}),
-      gameOrigin: {
-        kind: "file",
-        gameNumber: game,
-        file: { ...file, numGames: unwrap(countResult) },
-      },
-    });
-    if (practice) store.set(tabFamily(tabId), "practice");
-    store.set(addRecentFileAtom, { name: file.name, path: file.path, type: "repertoire" });
-    navigate({ to: "/" });
-    return tabId;
+    return openRepertoireTab(file, { practice, at }, { setTabs, setActiveTab, store, navigate });
   }
 
   /** Opens a practice tab that mixes the due positions of the given repertoires. */
